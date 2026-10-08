@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, KeyboardAvoidingView, Platform, Animated } from 'react-native';
 import { supabase } from '../../lib/supabase';
+import { useRouter } from 'expo-router';
 
 export default function LoginScreen() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -42,10 +44,16 @@ export default function LoginScreen() {
 
       <KeyboardAvoidingView style={s.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <Animated.View style={[s.card, { opacity: fadeAnim, transform: [{ translateY: fadeAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }]}>
+          
+          {/* Back to store button */}
+          <TouchableOpacity style={s.backToStore} onPress={() => router.replace('/(store)')}>
+            <Text style={s.backToStoreText}>← Volver a la Tienda</Text>
+          </TouchableOpacity>
+
           <View style={s.logoContainer}>
-            <View style={s.logoCircle}>
+            <TouchableOpacity style={s.logoCircle} onPress={() => router.replace('/(store)')}>
               <Text style={s.logoEmoji}>💊</Text>
-            </View>
+            </TouchableOpacity>
           </View>
 
           <Text style={s.title}>Farmacia Luci</Text>
@@ -156,4 +164,6 @@ const s = StyleSheet.create({
   toggleBtn: { marginTop: 16, alignItems: 'center', padding: 8 },
   toggleText: { color: '#60a5fa', fontSize: 14, fontWeight: '600' },
   footer: { textAlign: 'center', color: '#475569', fontSize: 12, marginTop: 20, lineHeight: 18 },
+  backToStore: { alignSelf: 'flex-start', marginBottom: 16 },
+  backToStoreText: { color: '#64748b', fontSize: 13, fontWeight: '600' },
 });

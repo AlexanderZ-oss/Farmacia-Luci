@@ -1,0 +1,284 @@
+-- ============================================================
+-- MIGRACIÓN 004: VULNERABILIDADES DE AUDITORÍA — FARMACIA
+-- ============================================================
+-- ⚠️  DOCUMENTO RESTRINGIDO — USO ACADÉMICO/AUDITORÍA ÚNICAMENTE
+--
+-- Este archivo documenta las 8 vulnerabilidades intencionales
+-- insertadas en el sistema para práctica de auditoría de seguridad.
+-- Cada vulnerabilidad incluye:
+--   - Dónde está (archivo/tabla/función)
+--   - Cómo explotarla
+--   - Cómo corregirla
+--
+-- NUNCA desplegar con datos reales sin corregir estas vulnerabilidades.
+-- ============================================================
+
+-- ============================================================
+-- VULN-01: IDOR en pedidos (Broken Object Level Authorization)
+-- ============================================================
+-- UBICACIÓN: 002_rls.sql — política "customer_update_orders"
+--
+-- DESCRIPCIÓN:
+--   La política UPDATE de la tabla `orders` para el rol 'customer'
+--   no filtra por `customer_id = auth.uid()`. Cualquier cliente
+--   autenticado puede modificar el estado de cualquier pedido
+--   de cualquier otro cliente.
+--
+-- EXPLOTACIÓN:
+--   1. Autenticarse como cliente A.
+--   2. Descubrir el UUID de un pedido del cliente B
+--      (posible via VULN-05 o por enumeración).
+--   3. Ejecutar:
+--      UPDATE orders SET status = 'cancelled' WHERE id = '<uuid_pedido_B>';
+--   4. El servidor acepta la operación sin error.
+--
+-- IMPACTO: Alto — cancelación/modificación de pedidos ajenos.
+--
+-- CORRECCIÓN:
+--   DROP POLICY "customer_update_orders" ON public.orders;
+--   CREATE POLICY "customer_update_orders_fixed"
+--     ON public.orders FOR UPDATE
+--     TO authenticated
+--     USING (
+--       public.get_my_role() = 'customer'
+--       AND public.is_active_user()
+--       AND customer_id = auth.uid()   -- <-- esta línea faltaba
+--     )
+--     WITH CHECK (
+--       public.get_my_role() = 'customer'
+--       AND customer_id = auth.uid()
+--     );
+
+-- ============================================================
+-- VULN-02: SQL Injection en búsqueda de productos
+-- ============================================================
+-- UBICACIÓN: Esta migración inserta la función vulnerable.
+--            La función segura está en 001_schema.sql.
+--
+-- DESCRIPCIÓN:
+--   La función search_products_vulnerable construye la query
+--   usando concatenación de strings (format con %s) en lugar
+--   de parámetros preparados, permitiendo inyección SQL.
+--
+-- NOTA: Se crea como función separada ('_vulnerable') para que
+--       el sistema funcione correctamente con la versión segura,
+--       pero el código del cliente (scanner.tsx) apunta a esta.
+
+CREATE OR REPLACE FUNCTION public.search_products_vulnerable(query_param TEXT)
+RETURNS SETOF public.products LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  -- VULN-02: Concatenación directa de input del usuario — INSEGURO INTENCIONAL
+  RETURN QUERY EXECUTE
+    format('SELECT * FROM public.products WHERE is_active = TRUE AND name LIKE ''%%%s%%'' ORDER BY name',
+           query_param);  -- query_param no está sanitizado
+END;
+$$;
+
+COMMENT ON FUNCTION public.search_products_vulnerable IS
+  'VULN-02: Función vulnerable a SQL Injection por concatenación directa. SOLO PARA AUDITORÍA.';
+
+-- EXPLOTACIÓN:
+--   Llamar con: query_param = "'; SELECT * FROM public.profiles; --"
+--   O más grave: "'; UPDATE profiles SET role=''admin'' WHERE id=''<uuid>''; --"
+--
+-- IMPACTO: Crítico — acceso no autorizado a datos, escalada de privilegios.
+--
+-- CORRECCIÓN:
+--   Usar la función search_products (segura) de 001_schema.sql,
+--   que usa ILIKE con parámetros preparados (|| operator, no format %s).
+--   O usar EXECUTE ... USING $1 en lugar de format con %s.
+
+-- ============================================================
+-- VULN-03: Bypass de verificación de edad en cliente
+-- ============================================================
+-- UBICACIÓN: app/(store)/checkout.tsx (código React Native)
+--
+-- DESCRIPCIÓN:
+--   El componente checkout tiene dos rutas de procesamiento:
+--   1. La ruta correcta: llama a la Edge Function 'verify-age'.
+--   2. Una ruta alternativa que omite la verificación y confía
+--      en el flag `ageVerified` del store de Zustand local.
+--   Un atacante puede modificar el estado de Zustand desde las
+--   DevTools del navegador y saltar la verificación.
+--
+-- EXPLOTACIÓN (en navegador web):
+--   1. Agregar al carrito un producto con restricción de edad.
+--   2. Ir a checkout.
+--   3. Abrir DevTools > Console y ejecutar:
+--      window.__zustand_stores__.cart.setState({ ageVerified: true })
+--   4. Completar el checkout sin ingresar DNI.
+--
+-- IMPACTO: Alto — venta de productos restringidos a menores de edad.
+--
+-- CORRECCIÓN:
+--   La validación de edad SIEMPRE debe hacerse en el servidor
+--   (Edge Function). El campo `ageVerified` del cliente no debe
+--   usarse para autorizar la operación final; en su lugar, la
+--   Edge Function 'confirm-order' debe verificar que existe un
+--   `age_verification_id` válido y reciente si el carrito
+--   contiene productos restringidos.
+
+-- ============================================================
+-- VULN-04: Secret débil en Edge Function verify-age
+-- ============================================================
+-- UBICACIÓN: supabase/functions/verify-age/index.ts
+--
+-- DESCRIPCIÓN:
+--   La Edge Function firma el token de resultado de verificación
+--   con un secret hardcodeado ("secret123") en lugar de leer
+--   de variables de entorno de Deno/Supabase.
+--
+-- EXPLOTACIÓN:
+--   1. Conociendo el secret "secret123", un atacante puede
+--      forjar un token JWT de verificación:
+--      jose.SignJWT({ verified: true, age: 25 })
+--        .setProtectedHeader({ alg: 'HS256' })
+--        .sign(new TextEncoder().encode('secret123'))
+--   2. Usar ese token forjado en una compra con producto restringido.
+--
+-- IMPACTO: Alto — bypass completo de verificación de edad.
+--
+-- CORRECCIÓN:
+--   Leer el secret desde variables de entorno de Supabase:
+--   const secret = Deno.env.get('AGE_VERIFY_SECRET')
+--   Y configurar AGE_VERIFY_SECRET en el dashboard de Supabase.
+
+-- ============================================================
+-- VULN-05: Exposición de precio de costo (cost_price)
+-- ============================================================
+-- UBICACIÓN: 002_rls.sql — política "anyone_select_active_products"
+--
+-- DESCRIPCIÓN:
+--   La política SELECT de productos no restringe columnas.
+--   Cuando cualquier rol (o anon) hace SELECT *, la columna
+--   cost_price queda expuesta en la respuesta de la API REST.
+--   Un cliente puede ver el margen de ganancia de cada producto.
+--
+-- EXPLOTACIÓN:
+--   GET https://<proyecto>.supabase.co/rest/v1/products?select=*
+--   (sin autenticación o como cliente)
+--   La respuesta incluye: "cost_price": 4.20
+--
+-- IMPACTO: Medio — exposición de información financiera sensible.
+--
+-- CORRECCIÓN:
+--   Opción A: Usar vistas por rol que excluyan cost_price.
+--   Opción B: Aplicar Column Level Security (si el ORM lo soporta).
+--   Opción C: En la Edge Function y en la app, hacer SELECT explícito
+--             sin incluir cost_price para roles no autorizados:
+--             SELECT id, name, price, stock, ... (sin cost_price)
+
+-- ============================================================
+-- VULN-06: Race Condition en confirmación de pedido web
+-- ============================================================
+-- UBICACIÓN: supabase/functions/confirm-order/index.ts
+--
+-- DESCRIPCIÓN:
+--   El chequeo de stock y el decremento se hacen en dos queries
+--   separadas sin transacción ni SELECT FOR UPDATE:
+--
+--   // Query 1: verificar stock
+--   const { data } = await supabase.from('products').select('stock').eq('id', productId).single()
+--   if (data.stock < quantity) throw new Error('Sin stock')
+--
+--   // Query 2 (tiempo después): decrementar
+--   await supabase.from('products').update({ stock: data.stock - quantity }).eq('id', productId)
+--
+--   Si dos clientes compran el último ítem simultáneamente,
+--   ambos pasan el chequeo y el stock queda en negativo.
+--
+-- EXPLOTACIÓN:
+--   Enviar dos requests POST a /confirm-order simultáneamente
+--   cuando solo queda 1 unidad en stock:
+--   Promise.all([fetch('/confirm-order', opts), fetch('/confirm-order', opts)])
+--
+-- IMPACTO: Alto — overselling, stock negativo, pedidos sin despachar.
+--
+-- CORRECCIÓN:
+--   Usar una transacción con SELECT FOR UPDATE en PostgreSQL:
+--   BEGIN;
+--   SELECT stock FROM products WHERE id = $1 FOR UPDATE;
+--   -- (validar stock aquí)
+--   UPDATE products SET stock = stock - $2 WHERE id = $1;
+--   COMMIT;
+--   O mejor: usar una función RPC de Supabase que haga el decremento
+--   atómicamente: UPDATE products SET stock = stock - $2
+--   WHERE id = $1 AND stock >= $2 RETURNING stock;
+
+-- ============================================================
+-- VULN-07: Manipulación de logs de auditoría
+-- ============================================================
+-- UBICACIÓN: 002_rls.sql — política "user_update_own_age_verif"
+--
+-- DESCRIPCIÓN:
+--   La política UPDATE de age_verifications permite al usuario
+--   modificar registros donde verified_by = auth.uid(), lo que
+--   incluye el campo 'result'. Un usuario puede cambiar
+--   'rejected' a 'approved' en su propio registro.
+--
+-- EXPLOTACIÓN:
+--   1. Intentar comprar un producto restringido con DNI de menor
+--      → se crea un registro con result = 'rejected'.
+--   2. Obtener el UUID de ese registro (visible via SELECT).
+--   3. Ejecutar:
+--      UPDATE age_verifications SET result = 'approved', age_calculated = 25
+--      WHERE id = '<uuid_verificacion>';
+--   4. Ahora el log muestra que la verificación fue aprobada.
+--
+-- IMPACTO: Alto — falsificación de registros de auditoría de seguridad.
+--
+-- CORRECCIÓN:
+--   DROP POLICY "user_update_own_age_verif" ON public.age_verifications;
+--   -- Los registros de auditoría NUNCA deben ser modificables por usuarios.
+--   -- Solo el sistema (service_role via Edge Function) puede insertar.
+--   -- Nadie puede UPDATE ni DELETE en age_verifications.
+
+-- ============================================================
+-- VULN-08: Escalada de privilegios via actualización de perfil
+-- ============================================================
+-- UBICACIÓN: 002_rls.sql — política "user_update_own_profile"
+--
+-- DESCRIPCIÓN:
+--   La política UPDATE de profiles para usuarios propios no
+--   restringe qué columnas pueden modificarse. Un cliente puede
+--   enviarse un UPDATE cambiando su campo 'role' a 'admin'.
+--
+-- EXPLOTACIÓN:
+--   1. Autenticarse como cliente.
+--   2. Ejecutar via Supabase JS client:
+--      await supabase.from('profiles').update({ role: 'admin' }).eq('id', user.id)
+--   3. Recargar la app — ahora el usuario tiene panel de admin.
+--
+-- IMPACTO: Crítico — acceso total al sistema con privilegios de administrador.
+--
+-- CORRECCIÓN:
+--   DROP POLICY "user_update_own_profile" ON public.profiles;
+--   CREATE POLICY "user_update_own_profile_fixed"
+--     ON public.profiles FOR UPDATE
+--     TO authenticated
+--     USING (id = auth.uid())
+--     WITH CHECK (
+--       id = auth.uid()
+--       AND role = (SELECT role FROM public.profiles WHERE id = auth.uid())  -- no puede cambiar rol
+--       AND is_active = (SELECT is_active FROM public.profiles WHERE id = auth.uid())  -- no puede activarse
+--     );
+--   -- Alternativa más robusta: usar Column Level Security o
+--   --   solo permitir actualizar full_name y campos no críticos.
+
+-- ============================================================
+-- RESUMEN DE VULNERABILIDADES
+-- ============================================================
+-- ID       Tipo                          Ubicación                   Impacto
+-- VULN-01  IDOR                          002_rls.sql (orders UPDATE) Alto
+-- VULN-02  SQL Injection                 Este archivo (función)      Crítico
+-- VULN-03  Business Logic Bypass         checkout.tsx (cliente)      Alto
+-- VULN-04  Cryptographic Failure         verify-age/index.ts         Alto
+-- VULN-05  Sensitive Data Exposure       002_rls.sql (products)      Medio
+-- VULN-06  Race Condition / TOCTOU       confirm-order/index.ts      Alto
+-- VULN-07  Audit Log Tampering           002_rls.sql (age_verif)     Alto
+-- VULN-08  Privilege Escalation          002_rls.sql (profiles)      Crítico
+-- ============================================================
+
+-- ============================================================
+-- FIN DE MIGRACIÓN 004
+-- ============================================================

@@ -1,0 +1,60 @@
+# ============================================================
+# .gitignore — Farmacia App
+# ============================================================
+
+# Variables de entorno (NUNCA commitear)
+.env
+.env.local
+.env.*.local
+
+# Dependencias
+node_modules/
+.pnp
+.pnp.js
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# EAS
+.easignore
+
+# Build outputs
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# macOS
+.DS_Store
+*.pem
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# TypeScript
+*.tsbuildinfo
+
+# Testing
+coverage/
+
+# Supabase local dev
+supabase/.temp/
+supabase/config.toml.local
+
+# ⚠️ IMPORTANTE: El archivo de vulnerabilidades de auditoría
+# NO debe ser commiteado en repositorios públicos.
+# Descomenta la siguiente línea si el repo es público:
+# supabase/migrations/004_audit_vulns.sql

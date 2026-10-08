@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Farmacia Luci",
+    "slug": "framacia",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "framacia",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.alexanderz.framacia"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}

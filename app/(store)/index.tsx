@@ -1,5 +1,8 @@
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Dimensions, Platform } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Dimensions, Platform, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useAuthStore } from '../../stores/authStore';
+import { supabase } from '../../lib/supabase';
 
 const { width } = Dimensions.get('window');
 
@@ -20,6 +23,30 @@ const FEATURED = [
 
 export default function StoreHome() {
   const router = useRouter();
+  const { session, role } = useAuthStore();
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 800, useNativeDriver: true })
+    ]).start();
+  }, []);
+
+  const handleAccountClick = () => {
+    if (!session) router.push('/(auth)/login');
+    else {
+      // Redirect based on role if they click "Mi Cuenta"
+      if (role === 'admin') router.push('/(admin)');
+      else if (role === 'stocker') router.push('/(stocker)');
+      else if (role === 'cashier') router.push('/(cashier)');
+      else {
+        // Customer panel could be here, or just logout option
+        supabase.auth.signOut();
+      }
+    }
+  };
 
   return (
     <View style={s.wrapper}>
@@ -27,9 +54,23 @@ export default function StoreHome() {
         <View style={s.circle1} />
         <View style={s.circle2} />
       </View>
+
+      {/* Top Navbar */}
+      <View style={s.navbar}>
+        <View style={s.navLogo}>
+          <Text style={s.navEmoji}>💊</Text>
+          <Text style={s.navTitle}>Luci</Text>
+        </View>
+        <TouchableOpacity style={s.accountBtn} onPress={handleAccountClick}>
+          <Text style={s.accountBtnText}>
+            {session ? (role === 'customer' ? 'Cerrar Sesión' : 'Ir a mi Panel') : 'Iniciar Sesión'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView style={s.scroll} contentContainerStyle={s.content}>
         {/* Hero */}
-        <View style={s.hero}>
+        <Animated.View style={[s.hero, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           <View style={s.heroInner}>
             <Text style={s.heroTag}>🏥 Farmacia Online Premium</Text>
             <Text style={s.heroTitle}>Tu salud,{'\n'}nuestra prioridad</Text>
@@ -38,7 +79,7 @@ export default function StoreHome() {
               <Text style={s.heroBtnText}>Explorar Catálogo →</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </Animated.View>
 
         {/* Stats bar */}
         <View style={s.statsBar}>
@@ -59,7 +100,7 @@ export default function StoreHome() {
         </View>
 
         {/* Categories */}
-        <View style={s.section}>
+        <Animated.View style={[s.section, { opacity: fadeAnim }]}>
           <Text style={s.sectionTitle}>Categorías</Text>
           <View style={s.catGrid}>
             {CATEGORIES.map((cat) => (
@@ -69,7 +110,7 @@ export default function StoreHome() {
               </TouchableOpacity>
             ))}
           </View>
-        </View>
+        </Animated.View>
 
         {/* Featured */}
         <View style={s.section}>
@@ -119,10 +160,18 @@ const s = StyleSheet.create({
   circle1: { position: 'absolute', width: 400, height: 400, borderRadius: 200, backgroundColor: 'rgba(59,130,246,0.1)', top: -150, right: -100 },
   circle2: { position: 'absolute', width: 300, height: 300, borderRadius: 150, backgroundColor: 'rgba(139,92,246,0.1)', bottom: -50, left: -100 },
   scroll: { flex: 1 },
-  content: { paddingBottom: 0 },
+  content: { paddingBottom: 40 },
+
+  // Navbar
+  navbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingTop: Platform.OS === 'ios' ? 60 : 30, paddingBottom: 16, backgroundColor: 'rgba(15,23,42,0.8)', borderBottomWidth: 1, borderBottomColor: 'rgba(148,163,184,0.1)', zIndex: 10 },
+  navLogo: { flexDirection: 'row', alignItems: 'center' },
+  navEmoji: { fontSize: 24, marginRight: 8 },
+  navTitle: { fontSize: 20, fontWeight: '800', color: '#f1f5f9', letterSpacing: 0.5 },
+  accountBtn: { backgroundColor: 'rgba(59,130,246,0.15)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(59,130,246,0.3)' },
+  accountBtnText: { color: '#60a5fa', fontWeight: '700', fontSize: 13 },
 
   // Hero
-  hero: { paddingTop: Platform.OS === 'ios' ? 80 : 60, paddingBottom: 40, paddingHorizontal: 24, position: 'relative' },
+  hero: { paddingTop: 40, paddingBottom: 40, paddingHorizontal: 24, position: 'relative' },
   heroInner: { position: 'relative', zIndex: 1, maxWidth: 480 },
   heroTag: { color: '#60a5fa', fontSize: 13, fontWeight: '700', marginBottom: 12, letterSpacing: 1, textTransform: 'uppercase' },
   heroTitle: { fontSize: 40, fontWeight: '800', color: '#f1f5f9', lineHeight: 48, marginBottom: 16, letterSpacing: 0.5 },

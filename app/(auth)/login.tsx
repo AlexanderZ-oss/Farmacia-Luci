@@ -1,17 +1,34 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, KeyboardAvoidingView, Platform, Animated } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
 export default function LoginScreen() {
+  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  async function signInWithEmail() {
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 800,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  async function handleAuth() {
     if (!email || !password) { Alert.alert('Error', 'Completa todos los campos'); return; }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) Alert.alert('Error', error.message);
+    
+    if (isLogin) {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) Alert.alert('Error al Ingresar', error.message);
+    } else {
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) Alert.alert('Error al Registrar', error.message);
+      else Alert.alert('¡Registro Exitoso!', 'Tu cuenta de cliente ha sido creada. Puedes iniciar sesión.');
+    }
     setLoading(false);
   }
 
@@ -24,7 +41,7 @@ export default function LoginScreen() {
       </View>
 
       <KeyboardAvoidingView style={s.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={s.card}>
+        <Animated.View style={[s.card, { opacity: fadeAnim, transform: [{ translateY: fadeAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }]}>
           <View style={s.logoContainer}>
             <View style={s.logoCircle}>
               <Text style={s.logoEmoji}>💊</Text>
@@ -32,7 +49,7 @@ export default function LoginScreen() {
           </View>
 
           <Text style={s.title}>Farmacia Luci</Text>
-          <Text style={s.subtitle}>Gestión farmacéutica integral</Text>
+          <Text style={s.subtitle}>{isLogin ? 'Ingresa a tu cuenta' : 'Crea tu cuenta de cliente'}</Text>
 
           <View style={s.inputGroup}>
             <Text style={s.label}>Correo electrónico</Text>
@@ -69,14 +86,20 @@ export default function LoginScreen() {
           <TouchableOpacity
             style={[s.button, loading && s.buttonDisabled]}
             disabled={loading}
-            onPress={signInWithEmail}
+            onPress={handleAuth}
             activeOpacity={0.85}
           >
-            <Text style={s.buttonText}>{loading ? 'Ingresando...' : 'Iniciar Sesión'}</Text>
+            <Text style={s.buttonText}>{loading ? 'Procesando...' : (isLogin ? 'Iniciar Sesión' : 'Registrarme')}</Text>
           </TouchableOpacity>
 
-          <Text style={s.footer}>Sistema protegido por roles RBAC + RLS</Text>
-        </View>
+          <TouchableOpacity onPress={() => setIsLogin(!isLogin)} style={s.toggleBtn}>
+            <Text style={s.toggleText}>
+              {isLogin ? '¿No tienes cuenta? Regístrate aquí' : '¿Ya tienes cuenta? Inicia sesión'}
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={s.footer}>El sistema asigna tu panel (Admin, Caja, Inventario o Tienda) automáticamente según tu rol.</Text>
+        </Animated.View>
       </KeyboardAvoidingView>
     </View>
   );
@@ -121,7 +144,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 14,
   },
   inputIcon: { fontSize: 16, marginRight: 10 },
-  input: { flex: 1, padding: 14, fontSize: 15, color: '#f1f5f9' },
+  input: { flex: 1, padding: 14, fontSize: 15, color: '#f1f5f9', outlineStyle: 'none' },
   button: {
     backgroundColor: '#3b82f6',
     borderRadius: 14, padding: 16,
@@ -130,5 +153,7 @@ const s = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontWeight: '700', fontSize: 16, letterSpacing: 0.3 },
-  footer: { textAlign: 'center', color: '#475569', fontSize: 11, marginTop: 20 },
+  toggleBtn: { marginTop: 16, alignItems: 'center', padding: 8 },
+  toggleText: { color: '#60a5fa', fontSize: 14, fontWeight: '600' },
+  footer: { textAlign: 'center', color: '#475569', fontSize: 12, marginTop: 20, lineHeight: 18 },
 });

@@ -1,9 +1,17 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, ScrollView, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useCartStore } from '../../stores/cartStore';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase';
+
+type PaymentMethod = 'card' | 'yape' | 'plin';
+
+const PAYMENT_METHODS: { value: PaymentMethod; label: string; detail: string; mark: string }[] = [
+  { value: 'card', label: 'Tarjeta', detail: 'Débito o crédito', mark: 'VISA' },
+  { value: 'yape', label: 'Yape', detail: 'Pago móvil', mark: 'Y' },
+  { value: 'plin', label: 'Plin', detail: 'Pago móvil', mark: 'P' },
+];
 
 export default function CheckoutScreen() {
   const router = useRouter();
@@ -11,12 +19,21 @@ export default function CheckoutScreen() {
   const { session } = useAuthStore();
   const [address, setAddress] = useState('');
   const [dni, setDni] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [loading, setLoading] = useState(false);
 
   const shippingCost = getTotal() >= 50 ? 0 : 5;
   const finalTotal = getTotal() + shippingCost;
 
+  useEffect(() => {
+    if (!session) router.replace('/(auth)/login?mode=register&returnTo=checkout');
+  }, [session, router]);
+
   const handleCheckout = async () => {
+    if (!session) {
+      router.replace('/(auth)/login?mode=register&returnTo=checkout');
+      return;
+    }
     if (items.length === 0) { Alert.alert('Error', 'Tu carrito está vacío'); return; }
     if (!address.trim()) { Alert.alert('Error', 'Ingresa una dirección de envío'); return; }
 
@@ -46,15 +63,18 @@ export default function CheckoutScreen() {
           items: items.map(item => ({ product_id: item.product.id, quantity: item.quantity })),
           delivery_type: 'delivery',
           delivery_address: { street: address },
-          payment_method: 'card',
+          payment_method: paymentMethod,
           age_verification_id: ageVerificationId,
         },
       });
       
       if (orderError) throw orderError;
+      if (!orderData?.success || !orderData?.order_id) {
+        throw new Error('No se pudo registrar el pedido. Inténtalo nuevamente.');
+      }
 
       clearCart();
-      Alert.alert('¡Compra Exitosa!', 'Tu pedido ha sido procesado y está en camino.', [
+      Alert.alert('Pedido registrado', `Pedido ${orderData.order_id}. El pago quedó pendiente de confirmación por ${paymentMethod === 'card' ? 'tarjeta' : paymentMethod === 'yape' ? 'Yape' : 'Plin'}. La farmacia coordinará contigo para verificarlo.`, [
         { text: 'Ver mis Pedidos', onPress: () => router.replace('/(store)/orders') },
         { text: 'Ir al Inicio', onPress: () => router.replace('/(store)') },
       ]);
@@ -120,9 +140,39 @@ export default function CheckoutScreen() {
           </View>
         </View>
 
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>3. Método de pago</Text>
+          <View style={s.paymentCard}>
+            <Text style={s.paymentIntro}>Elige cómo deseas pagar. El pedido quedará pendiente hasta verificar el pago.</Text>
+            {PAYMENT_METHODS.map((method) => {
+              const selected = paymentMethod === method.value;
+              return (
+                <TouchableOpacity
+                  key={method.value}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  style={[s.paymentOption, selected && s.paymentOptionSelected]}
+                  onPress={() => setPaymentMethod(method.value)}
+                >
+                  <View style={[s.paymentMark, selected && s.paymentMarkSelected]}>
+                    <Text style={[s.paymentMarkText, selected && s.paymentMarkTextSelected]}>{method.mark}</Text>
+                  </View>
+                  <View style={s.paymentInfo}>
+                    <Text style={s.paymentName}>{method.label}</Text>
+                    <Text style={s.paymentDetail}>{method.detail}</Text>
+                  </View>
+                  <View style={[s.radioOuter, selected && s.radioOuterSelected]}>
+                    {selected && <View style={s.radioInner} />}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
         {requiresAgeVerification() && (
           <View style={s.section}>
-            <Text style={s.sectionTitle}>3. Verificación de Edad</Text>
+            <Text style={s.sectionTitle}>4. Verificación de Edad</Text>
             <View style={s.ageCard}>
               <View style={s.ageHeader}>
                 <Text style={s.ageIcon}>⚠️</Text>
@@ -153,13 +203,13 @@ export default function CheckoutScreen() {
           {loading ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
               <ActivityIndicator color="#fff" style={{ marginRight: 8 }} />
-              <Text style={s.payBtnText}>Procesando Pago Seguro...</Text>
+              <Text style={s.payBtnText}>Registrando pedido...</Text>
             </View>
           ) : (
-            <Text style={s.payBtnText}>Pagar S/ {finalTotal.toFixed(2)}</Text>
+            <Text style={s.payBtnText}>Confirmar pedido · S/ {finalTotal.toFixed(2)}</Text>
           )}
         </TouchableOpacity>
-        <Text style={s.secureText}>🔒 Pago encriptado y seguro</Text>
+        <Text style={s.secureText}>El pedido se registrará pendiente; no se realizará ningún cobro en línea.</Text>
       </ScrollView>
     </View>
   );
@@ -250,6 +300,21 @@ const s = StyleSheet.create({
   ageTitle: { color: '#fca5a5', fontWeight: '900', fontSize: 16 },
   ageDesc: { color: '#f87171', fontSize: 14, marginBottom: 20, lineHeight: 22 },
 
+  paymentCard: { backgroundColor: 'rgba(15,23,42,0.82)', borderRadius: 18, padding: 18, borderWidth: 1, borderColor: 'rgba(148,163,184,0.1)' },
+  paymentIntro: { color: '#94a3b8', fontSize: 13, lineHeight: 20, marginBottom: 12 },
+  paymentOption: { flexDirection: 'row', alignItems: 'center', padding: 13, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(148,163,184,0.14)', marginTop: 8, gap: 12 },
+  paymentOptionSelected: { borderColor: '#60a5fa', backgroundColor: 'rgba(59,130,246,0.1)' },
+  paymentMark: { width: 42, height: 34, borderRadius: 8, backgroundColor: 'rgba(148,163,184,0.12)', alignItems: 'center', justifyContent: 'center' },
+  paymentMarkSelected: { backgroundColor: 'rgba(96,165,250,0.2)' },
+  paymentMarkText: { color: '#cbd5e1', fontSize: 12, fontWeight: '900' },
+  paymentMarkTextSelected: { color: '#93c5fd' },
+  paymentInfo: { flex: 1 },
+  paymentName: { color: '#f8fafc', fontSize: 14, fontWeight: '800' },
+  paymentDetail: { color: '#94a3b8', fontSize: 12, marginTop: 3 },
+  radioOuter: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: '#64748b', alignItems: 'center', justifyContent: 'center' },
+  radioOuterSelected: { borderColor: '#60a5fa' },
+  radioInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#60a5fa' },
+
   payBtn: {
     backgroundColor: '#3b82f6',
     borderRadius: 16,
@@ -263,5 +328,5 @@ const s = StyleSheet.create({
   },
   payBtnDisabled: { opacity: 0.7 },
   payBtnText: { color: '#fff', fontSize: 18, fontWeight: '900', letterSpacing: 0.5 },
-  secureText: { textAlign: 'center', color: '#94a3b8', fontSize: 13, marginTop: 20, fontWeight: '700' },
+  secureText: { textAlign: 'center', color: '#94a3b8', fontSize: 12, marginTop: 16, lineHeight: 18 },
 });

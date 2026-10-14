@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, ScrollView, Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
@@ -7,6 +7,8 @@ import { useCartStore, Product } from '../../../stores/cartStore';
 export default function ProductDetail() {
   const { id } = useLocalSearchParams();
   const [product, setProduct] = useState<any>(null);
+  const [gallery, setGallery] = useState<string[]>([]);
+  const [selectedImage, setSelectedImage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [added, setAdded] = useState(false);
   const addItem = useCartStore((state) => state.addItem);
@@ -18,10 +20,15 @@ export default function ProductDetail() {
     try {
       const { data, error } = await supabase
         .from('products')
-        .select('id, name, price, description, image_url, requires_age_verification, stock, categories(name)')
+        .select('id, name, price, description, image_url, requires_age_verification, stock, categories(name), product_images(image_url, sort_order)')
         .eq('id', id).single();
       if (error) throw error;
       setProduct(data);
+      const images = [...(data.product_images || [])]
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map((image) => image.image_url);
+      if (images.length === 0 && data.image_url) images.push(data.image_url);
+      setGallery(images);
     } catch (error) { console.error(error); }
     finally { setLoading(false); }
   }
@@ -36,16 +43,39 @@ export default function ProductDetail() {
       {/* Image Area */}
       <View style={s.imgArea}>
         <View style={s.imgDecor} />
-        <Text style={s.imgEmoji}>💊</Text>
+        {gallery[selectedImage]
+          ? <Image source={{ uri: gallery[selectedImage] }} style={s.mainImage} resizeMode="contain" />
+          : <Text style={s.imgEmoji}>💊</Text>}
         <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
           <Text style={s.backBtnText}>← Volver</Text>
         </TouchableOpacity>
+        {gallery.length > 1 && (
+          <View style={s.imageCount}>
+            <Text style={s.imageCountText}>{selectedImage + 1} / {gallery.length}</Text>
+          </View>
+        )}
       </View>
 
       {/* Info */}
       <View style={s.infoCard}>
         <Text style={s.cat}>{catName}</Text>
         <Text style={s.name}>{product.name}</Text>
+        {gallery.length > 1 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.thumbnailList}>
+            {gallery.map((imageUrl, index) => (
+              <TouchableOpacity
+                key={`${imageUrl}-${index}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Ver imagen ${index + 1} de ${gallery.length}`}
+                accessibilityState={{ selected: index === selectedImage }}
+                style={[s.thumbnailButton, index === selectedImage && s.thumbnailSelected]}
+                onPress={() => setSelectedImage(index)}
+              >
+                <Image source={{ uri: imageUrl }} style={s.thumbnailImage} resizeMode="cover" />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
         <View style={s.priceRow}>
           <Text style={s.price}>S/ {Number(product.price).toFixed(2)}</Text>
           <View style={[s.stockBadge, product.stock < 10 ? s.stockLow : s.stockOk]}>
@@ -106,6 +136,9 @@ const s = StyleSheet.create({
     right: -30,
   },
   imgEmoji: { fontSize: 80 },
+  mainImage: { width: '100%', height: '100%' },
+  imageCount: { position: 'absolute', right: 16, bottom: 16, backgroundColor: 'rgba(15,23,42,0.8)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  imageCountText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   backBtn: {
     position: 'absolute',
     top: 48,
@@ -138,6 +171,10 @@ const s = StyleSheet.create({
     marginBottom: 6,
   },
   name: { fontSize: 24, fontWeight: '900', color: '#f8fafc', marginBottom: 12, lineHeight: 30 },
+  thumbnailList: { gap: 8, marginBottom: 16 },
+  thumbnailButton: { width: 64, height: 64, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(148,163,184,0.2)' },
+  thumbnailSelected: { borderColor: '#60a5fa', borderWidth: 2 },
+  thumbnailImage: { width: '100%', height: '100%' },
   priceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
   price: { fontSize: 28, fontWeight: '900', color: '#60a5fa' },
   stockBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },

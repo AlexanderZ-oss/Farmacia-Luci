@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Slot, useRouter, useSegments } from 'expo-router';
+import { Slot, useLocalSearchParams, useRouter, useSegments } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/authStore';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
@@ -9,6 +9,7 @@ export default function RootLayout() {
   const { session, isLoading, setSession, fetchProfile, role } = useAuthStore();
   const segments = useSegments();
   const router = useRouter();
+  const params = useLocalSearchParams<{ returnTo?: string }>();
   const [isNavigationReady, setIsNavigationReady] = useState(false);
 
   useEffect(() => {
@@ -54,6 +55,11 @@ export default function RootLayout() {
     }
 
     if (inAuthGroup) {
+      if (params.returnTo === 'checkout' && role === null) return;
+      if (params.returnTo === 'checkout' && role === 'customer') {
+        router.replace('/(store)/checkout');
+        return;
+      }
       router.replace(goToRoleHome());
       return;
     }
@@ -76,7 +82,7 @@ export default function RootLayout() {
     if (!inAuthGroup && !inStoreGroup && !inAdminGroup && !inStockerGroup && !inCashierGroup && role !== 'customer') {
       router.replace(goToRoleHome());
     }
-  }, [session, isLoading, role, segments, isNavigationReady]);
+  }, [session, isLoading, role, segments, isNavigationReady, params.returnTo]);
 
   if (isLoading) {
     return (

@@ -1,4 +1,4 @@
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, Image, Alert } from 'react-native';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRouter } from 'expo-router';
@@ -11,8 +11,9 @@ export default function ProductsScreen() {
   useEffect(() => { fetchProducts(); }, []);
 
   async function fetchProducts() {
-    const { data } = await supabase.from('products').select('id, name, price, stock, is_active').order('name');
-    setProducts(data || []);
+    const { data, error } = await supabase.from('products').select('id, name, price, stock, is_active, image_url').order('name');
+    if (error) Alert.alert('Error al cargar productos', error.message);
+    setProducts(data ?? []);
     setLoading(false);
   }
 
@@ -31,6 +32,11 @@ export default function ProductsScreen() {
           contentContainerStyle={{ paddingBottom: 24 }}
           renderItem={({ item }) => (
             <TouchableOpacity style={s.card} onPress={() => router.push(`/(stocker)/product-form?id=${item.id}`)}>
+              <View style={s.thumbnailBox}>
+                {item.image_url
+                  ? <Image source={{ uri: item.image_url }} style={s.thumbnail} resizeMode="cover" />
+                  : <Text style={s.thumbnailFallback}>IMG</Text>}
+              </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.name}>{item.name}</Text>
                 <Text style={s.price}>S/ {Number(item.price).toFixed(2)}</Text>
@@ -55,6 +61,9 @@ const s = StyleSheet.create({
   addBtn: { backgroundColor: '#16a34a', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
   addBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 13 },
   card: { backgroundColor: '#fff', padding: 14, borderRadius: 10, marginBottom: 8, flexDirection: 'row', borderWidth: 1, borderColor: '#e5e7eb' },
+  thumbnailBox: { width: 56, height: 56, borderRadius: 7, overflow: 'hidden', backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  thumbnail: { width: '100%', height: '100%' },
+  thumbnailFallback: { color: '#64748b', fontSize: 10, fontWeight: '800' },
   name: { fontWeight: '700', color: '#1f2937', fontSize: 14 },
   price: { color: '#2563eb', fontWeight: '600', fontSize: 13, marginTop: 2 },
   stock: { fontWeight: 'bold', color: '#f59e0b', fontSize: 13 },

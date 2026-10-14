@@ -31,6 +31,9 @@ export default function OrdersScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={s.orderId}>Pedido #{item.id.slice(0, 8)}</Text>
                 <Text style={s.orderDate}>{new Date(item.created_at).toLocaleDateString()}</Text>
+                <Text style={s.orderPayment}>
+                  Pago {item.payment_status === 'paid' ? 'confirmado' : 'pendiente'} · {item.payment_method === 'card' ? 'Tarjeta' : item.payment_method === 'yape' ? 'Yape' : item.payment_method === 'plin' ? 'Plin' : item.payment_method}
+                </Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={s.orderTotal}>S/ {Number(item.total_amount).toFixed(2)}</Text>
@@ -53,6 +56,7 @@ const s = StyleSheet.create({
   card: { backgroundColor: '#fff', padding: 14, borderRadius: 12, marginBottom: 10, flexDirection: 'row', borderWidth: 1, borderColor: '#e5e7eb' },
   orderId: { fontWeight: '700', color: '#1f2937', fontSize: 14 },
   orderDate: { color: '#6b7280', fontSize: 12, marginTop: 2 },
+  orderPayment: { color: '#92400e', fontSize: 12, fontWeight: '600', marginTop: 5 },
   orderTotal: { fontWeight: 'bold', color: '#2563eb', fontSize: 15 },
   badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginTop: 4 },
   badgeText: { fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase' },

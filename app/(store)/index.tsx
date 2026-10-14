@@ -1,8 +1,6 @@
 ﻿import React, { useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Platform, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuthStore } from '../../stores/authStore';
-import { supabase } from '../../lib/supabase';
 
 const CATEGORIES = [
   { name: 'Medicamentos', icon: '💊', color: '#60a5fa', bg: 'rgba(96,165,250,0.14)' },
@@ -21,7 +19,6 @@ const FEATURED = [
 
 export default function StoreHome() {
   const router = useRouter();
-  const { session, role } = useAuthStore();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
 
@@ -32,47 +29,10 @@ export default function StoreHome() {
     ]).start();
   }, []);
 
-  const handleAccountClick = async () => {
-    if (!session) {
-      router.push('/(auth)/login');
-      return;
-    }
-
-    if (role === 'admin') {
-      router.push('/(admin)');
-      return;
-    }
-
-    if (role === 'stocker') {
-      router.push('/(stocker)');
-      return;
-    }
-
-    if (role === 'cashier') {
-      router.push('/(cashier)');
-      return;
-    }
-
-    await supabase.auth.signOut();
-  };
-
   return (
     <View style={styles.screen}>
       <View style={styles.bgGlow} />
       <View style={styles.bgGlowSecondary} />
-
-      <View style={styles.navbar}>
-        <View style={styles.logoWrap}>
-          <Text style={styles.logoEmoji}>💊</Text>
-          <Text style={styles.logoText}>Luci</Text>
-        </View>
-
-        <TouchableOpacity style={styles.accountBtn} onPress={handleAccountClick} activeOpacity={0.88}>
-          <Text style={styles.accountBtnText}>
-            {session ? (role === 'customer' ? 'Cerrar sesión' : 'Mi panel') : 'Iniciar sesión'}
-          </Text>
-        </TouchableOpacity>
-      </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Animated.View style={[styles.hero, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
@@ -200,43 +160,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 70,
     shadowOffset: { width: 0, height: 0 },
-  },
-  navbar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 58 : 28,
-    paddingBottom: 16,
-    backgroundColor: 'rgba(2, 6, 23, 0.72)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(148,163,184,0.12)',
-  },
-  logoWrap: { flexDirection: 'row', alignItems: 'center' },
-  logoEmoji: { fontSize: 24, marginRight: 8 },
-  logoText: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#f8fafc',
-    letterSpacing: 0.5,
-  },
-  accountBtn: {
-    backgroundColor: 'rgba(96,165,250,0.13)',
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(147,197,253,0.35)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    shadowColor: '#60a5fa',
-    shadowOpacity: 0.18,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-  },
-  accountBtnText: {
-    color: '#dbeafe',
-    fontWeight: '800',
-    fontSize: 12,
-    letterSpacing: 0.4,
   },
   scroll: { flex: 1 },
   content: { paddingBottom: 32 },

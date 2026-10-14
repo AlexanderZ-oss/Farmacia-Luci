@@ -10,38 +10,125 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
-    );
-    
-    const { data: { user } } = await supabaseClient.auth.getUser();
-    if (!user) throw new Error('Unauthorized');
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const authorization = req.headers.get('Authorization');
 
-    // SECURE: Validación de rol de cliente obligatoria
-    const { data: profile } = await supabaseClient.from('profiles').select('role').eq('id', user.id).single();
-    if (profile?.role !== 'customer') throw new Error('Forbidden');
+    if (!supabaseUrl || !anonKey || !serviceRoleKey || !authorization) {
+      throw new Error('Order service is not configured');
+    }
 
-    const { items, delivery_type, delivery_address, payment_method, age_verification_id } = await req.json();
+    const authClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authorization } },
+    });
+    const { data: { user }, error: authError } = await authClient.auth.getUser();
+    if (authError || !user) throw new Error('Unauthorized');
 
-    // SECURE: Transacción atómica delegada para evitar Race Condition (Mitigación VULN-06)
-    // El stock debe verificarse en el backend transaccional de Supabase (SQL RPC `process_order_tx`).
-    const serviceRoleClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
+    const { data: profile, error: profileError } = await authClient
+      .from('profiles')
+      .select('role, is_active')
+      .eq('id', user.id)
+      .single();
+    if (profileError) throw profileError;
+    if (profile.role !== 'customer' || !profile.is_active) throw new Error('Forbidden');
 
-    // Por simplicidad, retornamos una orden pendiente de la simulación del procesador SQL
-    return new Response(JSON.stringify({ 
-      success: true, 
-      message: "Orden procesada de forma segura mediante servicio transaccional delegado" 
+    const body = await req.json();
+    const { items, delivery_type, delivery_address, payment_method, age_verification_id } = body;
+    const allowedMethods = ['card', 'yape', 'plin'];
+
+    if (!Array.isArray(items) || items.length === 0) throw new Error('Cart is empty');
+    if (delivery_type !== 'delivery' || !delivery_address?.street?.trim()) {
+      throw new Error('A delivery address is required');
+    }
+    if (!allowedMethods.includes(payment_method)) throw new Error('Unsupported payment method');
+
+    const normalizedItems = items.map((item: { product_id?: string; quantity?: number }) => {
+      if (typeof item.product_id !== 'string' || !item.product_id) throw new Error('Invalid product');
+      if (!Number.isInteger(item.quantity) || !item.quantity || item.quantity < 1) {
+        throw new Error('Invalid product quantity');
+      }
+      return { product_id: item.product_id, quantity: item.quantity };
+    });
+    const productIds = normalizedItems.map((item) => item.product_id);
+    if (new Set(productIds).size !== productIds.length) throw new Error('Duplicate cart products');
+
+    const serviceClient = createClient(supabaseUrl, serviceRoleKey);
+    const { data: products, error: productsError } = await serviceClient
+      .from('products')
+      .select('id, price, stock, is_active, requires_age_verification')
+      .in('id', productIds);
+    if (productsError) throw productsError;
+    if (!products || products.length !== normalizedItems.length) throw new Error('A product is unavailable');
+
+    const productById = new Map(products.map((product) => [product.id, product]));
+    let subtotal = 0;
+    let needsAgeVerification = false;
+
+    for (const item of normalizedItems) {
+      const product = productById.get(item.product_id);
+      if (!product || !product.is_active) throw new Error('A product is unavailable');
+      if (product.stock < item.quantity) throw new Error(`Insufficient stock for ${item.product_id}`);
+      subtotal += Number(product.price) * item.quantity;
+      needsAgeVerification ||= product.requires_age_verification;
+    }
+
+    if (needsAgeVerification) {
+      if (!age_verification_id) throw new Error('Age verification is required');
+      const { data: verification, error: verificationError } = await serviceClient
+        .from('age_verifications')
+        .select('id')
+        .eq('id', age_verification_id)
+        .eq('verified_by', user.id)
+        .eq('result', 'approved')
+        .maybeSingle();
+      if (verificationError) throw verificationError;
+      if (!verification) throw new Error('Age verification is invalid');
+    }
+
+    const shipping = subtotal >= 50 ? 0 : 5;
+    const total = Number((subtotal + shipping).toFixed(2));
+    const { data: order, error: orderError } = await serviceClient
+      .from('orders')
+      .insert({
+        customer_id: user.id,
+        status: 'pending',
+        total_amount: total,
+        payment_method,
+        payment_status: 'pending',
+        delivery_type,
+        delivery_address,
+        age_verification_id: age_verification_id || null,
+      })
+      .select('id')
+      .single();
+    if (orderError) throw orderError;
+
+    const orderItems = normalizedItems.map((item) => ({
+      order_id: order.id,
+      product_id: item.product_id,
+      quantity: item.quantity,
+      unit_price: Number(productById.get(item.product_id)!.price),
+    }));
+    const { error: itemsError } = await serviceClient.from('order_items').insert(orderItems);
+    if (itemsError) {
+      const { error: rollbackError } = await serviceClient.from('orders').delete().eq('id', order.id);
+      if (rollbackError) console.error('Failed to remove incomplete order:', rollbackError.message);
+      throw itemsError;
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
+      order_id: order.id,
+      total_amount: total,
+      payment_method,
+      payment_status: 'pending',
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    const message = error instanceof Error ? error.message : 'Could not create the order';
+    return new Response(JSON.stringify({ error: message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
     });

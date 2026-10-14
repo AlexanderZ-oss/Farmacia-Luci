@@ -1,4 +1,4 @@
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, TextInput, Platform } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, TextInput, Platform, Image } from 'react-native';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRouter } from 'expo-router';
@@ -26,7 +26,7 @@ export default function CatalogScreen() {
     try {
       const { data, error } = await supabase
         .from('products')
-        .select('id, name, price, image_url, requires_age_verification, description, stock, categories(name)')
+        .select('id, name, price, image_url, requires_age_verification, description, stock, categories(name), product_images(image_url, sort_order)')
         .eq('is_active', true)
         .order('name');
       if (error) throw error;
@@ -50,11 +50,18 @@ export default function CatalogScreen() {
   const renderProduct = ({ item }: { item: any }) => {
     const catName = item.categories?.name === 'Primeros Auxilios' ? '1ros Auxilios' : (item.categories?.name || 'Medicamentos');
     const emoji = EMOJI_MAP[catName] || '💊';
+    const gallery = [...(item.product_images || [])].sort((a, b) => a.sort_order - b.sort_order);
+    const primaryImage = gallery[0]?.image_url || item.image_url;
 
     return (
       <TouchableOpacity style={s.card} onPress={() => router.push(`/(store)/product/${item.id}`)} activeOpacity={0.85}>
         <View style={s.cardImgBox}>
-          <Text style={s.cardEmoji}>{emoji}</Text>
+          {primaryImage
+            ? <Image source={{ uri: primaryImage }} style={s.productImage} resizeMode="cover" />
+            : <Text style={s.cardEmoji}>{emoji}</Text>}
+          {gallery.length > 1 && (
+            <View style={s.imageCount}><Text style={s.imageCountText}>{gallery.length} fotos</Text></View>
+          )}
           {item.requires_age_verification && (
             <View style={s.ageBadge}><Text style={s.ageBadgeText}>+18</Text></View>
           )}
@@ -284,6 +291,9 @@ const s = StyleSheet.create({
     alignItems: 'center',
     position: 'relative',
   },
+  productImage: { width: '100%', height: '100%' },
+  imageCount: { position: 'absolute', bottom: 8, right: 8, backgroundColor: 'rgba(15,23,42,0.78)', paddingHorizontal: 7, paddingVertical: 4, borderRadius: 5 },
+  imageCountText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   cardEmoji: { fontSize: 34 },
   ageBadge: {
     position: 'absolute',

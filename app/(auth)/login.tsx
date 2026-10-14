@@ -12,10 +12,12 @@ import {
   ScrollView,
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 
 export default function LoginScreen() {
-  const [isLogin, setIsLogin] = useState(true);
+  const params = useLocalSearchParams<{ mode?: string; returnTo?: string }>();
+  const returnToCheckout = params.returnTo === 'checkout';
+  const [isLogin, setIsLogin] = useState(params.mode !== 'register');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -27,7 +29,6 @@ export default function LoginScreen() {
   const floatAnim = useRef(new Animated.Value(0)).current;
   const rotate1 = useRef(new Animated.Value(0)).current;
   const rotate2 = useRef(new Animated.Value(0)).current;
-  const pulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -44,23 +45,15 @@ export default function LoginScreen() {
 
     const r1 = Animated.loop(Animated.timing(rotate1, { toValue: 1, duration: 14000, useNativeDriver: true }));
     const r2 = Animated.loop(Animated.timing(rotate2, { toValue: -1, duration: 18000, useNativeDriver: true }));
-    const p = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.03, duration: 1300, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 1300, useNativeDriver: true }),
-      ]),
-    );
 
     floatLoop.start();
     r1.start();
     r2.start();
-    p.start();
 
     return () => {
       floatLoop.stop();
       r1.stop();
       r2.stop();
-      p.stop();
     };
   }, []);
 
@@ -69,11 +62,18 @@ export default function LoginScreen() {
 
   async function performLogin(targetEmail: string, targetPass: string) {
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email: targetEmail, password: targetPass });
-    if (error) {
-      Alert.alert('Error al ingresar', error.message);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: targetEmail, password: targetPass });
+      if (error) {
+        Alert.alert('Error al ingresar', error.message);
+        return;
+      }
+      if (returnToCheckout) router.replace('/(store)/checkout');
+    } catch (error) {
+      Alert.alert('Error al ingresar', error instanceof Error ? error.message : 'No se pudo iniciar sesión.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   async function handleAuth() {
@@ -82,33 +82,33 @@ export default function LoginScreen() {
       return;
     }
 
-    setLoading(true);
-
     if (isLogin) {
       await performLogin(email, password);
       return;
     }
 
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) {
-      Alert.alert('Error al registrar', error.message);
-    } else {
-      Alert.alert('¡Registro exitoso!', 'Puedes iniciar sesión con tu cuenta.');
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) {
+        Alert.alert('Error al registrar', error.message);
+      } else if (data.session && returnToCheckout) {
+        router.replace('/(store)/checkout');
+      } else if (data.session) {
+        Alert.alert('Cuenta creada', 'Tu cuenta de cliente está lista.');
+      } else {
+        setIsLogin(true);
+        Alert.alert(
+          'Confirma tu correo',
+          'Te enviamos un enlace de confirmación. Cuando confirmes tu correo, inicia sesión para continuar con tu compra.',
+        );
+      }
+    } catch (error) {
+      Alert.alert('Error al registrar', error instanceof Error ? error.message : 'No se pudo crear la cuenta.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
-
-  const quickLogin = (presetEmail: string, presetPass: string) => {
-    setEmail(presetEmail);
-    setPassword(presetPass);
-    void performLogin(presetEmail, presetPass);
-  };
-
-  const quickRoles = [
-    { label: 'Admin', icon: '🛡️', email: 'admin@gmail.com', pass: 'Admin1234!', color: '#60a5fa', bg: 'rgba(96,165,250,0.14)', border: 'rgba(96,165,250,0.38)' },
-    { label: 'Cajero', icon: '💳', email: 'cajero@gmail.com', pass: 'Cajero1234!', color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.36)' },
-    { label: 'Inventario', icon: '📦', email: 'inventario@gmail.com', pass: 'Inventario1234!', color: '#34d399', bg: 'rgba(52,211,153,0.12)', border: 'rgba(52,211,153,0.36)' },
-  ];
 
   return (
     <View style={styles.wrapper}>
@@ -138,28 +138,9 @@ export default function LoginScreen() {
               </Animated.View>
               <Text style={styles.title}>Farmacia Luci</Text>
               <Text style={styles.subtitle}>
-                {isLogin ? 'Accede a tu panel de trabajo' : 'Crea tu cuenta de cliente'}
+                {isLogin ? 'Ingresa a tu cuenta de cliente' : 'Crea tu cuenta para continuar con tu compra'}
               </Text>
             </View>
-
-            {isLogin && (
-              <Animated.View style={[styles.quickSection, { transform: [{ scale: pulse }] }]}>
-                <Text style={styles.quickTitle}>Acceso rápido por rol</Text>
-                <View style={styles.quickRow}>
-                  {quickRoles.map((role, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      style={[styles.chip, { backgroundColor: role.bg, borderColor: role.border }]}
-                      onPress={() => quickLogin(role.email, role.pass)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.chipIcon}>{role.icon}</Text>
-                      <Text style={[styles.chipLabel, { color: role.color }]}>{role.label}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </Animated.View>
-            )}
 
             <View style={styles.form}>
               <View style={styles.inputGroup}>
@@ -207,7 +188,7 @@ export default function LoginScreen() {
                 <Text style={styles.buttonText}>{loading ? '⏳ Procesando...' : isLogin ? '🚀 Iniciar sesión' : '✨ Crear cuenta'}</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.toggleBtn} onPress={() => setIsLogin((value) => !value)}>
+              <TouchableOpacity style={styles.toggleBtn} onPress={() => setIsLogin((value) => !value)} disabled={loading}>
                 <Text style={styles.toggleText}>
                   {isLogin ? '¿Sin cuenta? Regístrate aquí →' : '¿Ya tienes cuenta? Inicia sesión →'}
                 </Text>
@@ -216,12 +197,7 @@ export default function LoginScreen() {
 
             <View style={styles.footerSection}>
               <View style={styles.footerDivider} />
-              <Text style={styles.footer}>El sistema asigna automáticamente tu acceso según el rol asignado.</Text>
-              <View style={styles.footerBadges}>
-                <View style={[styles.fBadge, { borderColor: 'rgba(59,130,246,0.3)' }]}><Text style={styles.fBadgeText}>🛡️ Admin</Text></View>
-                <View style={[styles.fBadge, { borderColor: 'rgba(245,158,11,0.3)' }]}><Text style={styles.fBadgeText}>💳 Cajero</Text></View>
-                <View style={[styles.fBadge, { borderColor: 'rgba(16,185,129,0.3)' }]}><Text style={styles.fBadgeText}>📦 Inventario</Text></View>
-              </View>
+              <Text style={styles.footer}>Las cuentas nuevas se registran como clientes.</Text>
             </View>
           </Animated.View>
         </ScrollView>
@@ -386,37 +362,6 @@ const styles = StyleSheet.create({
   },
   subtitle: { fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 20 },
 
-  quickSection: {
-    marginBottom: 24,
-    backgroundColor: 'rgba(15,23,42,0.72)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.08)',
-    padding: 14,
-  },
-  quickTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#dbeafe',
-    marginBottom: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  quickRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  chip: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginHorizontal: 2,
-  },
-  chipIcon: { fontSize: 14, marginRight: 4 },
-  chipLabel: { fontSize: 11.5, fontWeight: '800' },
-
   form: { gap: 4 },
   inputGroup: { marginBottom: 14 },
   label: {
@@ -461,20 +406,4 @@ const styles = StyleSheet.create({
   footerSection: { marginTop: 24 },
   footerDivider: { height: 1, backgroundColor: 'rgba(148,163,184,0.1)', marginBottom: 16 },
   footer: { textAlign: 'center', color: '#64748b', fontSize: 11.5, lineHeight: 18 },
-  footerBadges: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    flexWrap: 'wrap',
-    marginTop: 12,
-  },
-  fBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-    borderWidth: 1,
-    backgroundColor: 'rgba(15,23,42,0.65)',
-    marginHorizontal: 4,
-    marginBottom: 8,
-  },
-  fBadgeText: { color: '#dbeafe', fontSize: 11, fontWeight: '700' },
 });

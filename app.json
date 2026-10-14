@@ -17,7 +17,14 @@
       "output": "single"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permite seleccionar fotos para mostrarlas en los productos de la farmacia.",
+          "cameraPermission": "Permite tomar fotos de los productos para el catálogo."
+        }
+      ]
     ]
   }
 }

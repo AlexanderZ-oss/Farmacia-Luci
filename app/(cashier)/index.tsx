@@ -1,8 +1,10 @@
-import { View, Text, TextInput, TouchableOpacity, FlatList, Alert, StyleSheet, ActivityIndicator, Platform } from 'react-native';
-import { useState, useEffect } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity, FlatList,
+  Alert, StyleSheet, ActivityIndicator, Platform, Animated,
+} from 'react-native';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../stores/authStore';
-import { useRouter } from 'expo-router';
 
 interface PosItem { product_id: string; name: string; price: number; quantity: number; }
 
@@ -11,14 +13,37 @@ export default function CashierPOS() {
   const [results, setResults] = useState<any[]>([]);
   const [cart, setCart] = useState<PosItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const { session, signOut } = useAuthStore();
-  const router = useRouter();
+  const { session } = useAuthStore();
+
+  // Animations
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  const cartBounce = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.spring(slideAnim, { toValue: 0, tension: 80, friction: 8, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  // Bounce cart icon when item is added
+  const bounceCart = useCallback(() => {
+    Animated.sequence([
+      Animated.spring(cartBounce, { toValue: 1.3, useNativeDriver: true, tension: 200 }),
+      Animated.spring(cartBounce, { toValue: 1, useNativeDriver: true, tension: 200 }),
+    ]).start();
+  }, []);
 
   async function searchProducts(query: string) {
     setSearch(query);
     if (query.length < 2) { setResults([]); return; }
-    const { data } = await supabase.from('products').select('id, name, price, stock, barcode')
-      .or(`name.ilike.%${query}%,barcode.eq.${query}`).eq('is_active', true).limit(10);
+    const { data } = await supabase
+      .from('products')
+      .select('id, name, price, stock, barcode, category_id')
+      .or(`name.ilike.%${query}%,barcode.eq.${query}`)
+      .eq('is_active', true)
+      .limit(10);
     setResults(data || []);
   }
 
@@ -30,10 +55,17 @@ export default function CashierPOS() {
     });
     setSearch('');
     setResults([]);
+    bounceCart();
   }
 
   function removeFromCart(productId: string) {
     setCart(prev => prev.filter(i => i.product_id !== productId));
+  }
+
+  function updateQty(productId: string, delta: number) {
+    setCart(prev => prev
+      .map(i => i.product_id === productId ? { ...i, quantity: Math.max(1, i.quantity + delta) } : i)
+    );
   }
 
   const total = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
@@ -46,73 +78,101 @@ export default function CashierPOS() {
         body: { items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity })), payment_method: paymentMethod },
       });
       if (error) throw error;
-      Alert.alert('✅ Venta Completada', `Total: S/ ${total.toFixed(2)}\nMétodo: ${paymentMethod}`);
+      Alert.alert('✅ Venta Completada', `Total: S/ ${total.toFixed(2)}\nMétodo: ${paymentMethod === 'cash' ? 'Efectivo' : 'Tarjeta'}`);
       setCart([]);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'No se pudo procesar la venta');
+      Alert.alert('Error en Venta', error.message || 'No se pudo procesar la venta');
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <View style={s.wrapper}>
-      <View style={s.gradientBg}>
-        <View style={s.circle1} />
-        <View style={s.circle2} />
-      </View>
-      <View style={s.container}>
-        {/* Header */}
-        <View style={s.header}>
-          <Text style={s.title}>Punto de Venta</Text>
-          <TouchableOpacity style={s.logoutBtnSm} onPress={() => signOut()}>
-            <Text style={s.logoutTextSm}>Salir</Text>
-          </TouchableOpacity>
+    <Animated.View style={[s.wrapper, { opacity: fadeAnim }]}>
+      {/* Background glow circles */}
+      <View style={s.circle1} />
+      <View style={s.circle2} />
+      <View style={s.circle3} />
+
+      <Animated.View style={[s.container, { transform: [{ translateY: slideAnim }] }]}>
+
+        {/* Search Bar */}
+        <View style={s.searchSection}>
+          <Text style={s.sectionLabel}>🔍 Buscar Producto</Text>
+          <View style={s.searchContainer}>
+            <Text style={s.searchIcon}>🔎</Text>
+            <TextInput
+              style={s.searchInput}
+              value={search}
+              onChangeText={searchProducts}
+              placeholder="Nombre, código de barras..."
+              placeholderTextColor="#475569"
+              returnKeyType="search"
+            />
+            {search.length > 0 && (
+              <TouchableOpacity onPress={() => { setSearch(''); setResults([]); }}>
+                <Text style={s.clearIcon}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
-        {/* Search */}
-        <View style={s.searchContainer}>
-          <Text style={s.searchIcon}>🔍</Text>
-          <TextInput 
-            style={s.searchInput} 
-            value={search} 
-            onChangeText={searchProducts}
-            placeholder="Buscar por nombre o código..." 
-            placeholderTextColor="#64748b"
-          />
-        </View>
-
+        {/* Search Results Dropdown */}
         {results.length > 0 && (
           <View style={s.resultsList}>
-            {results.map(p => (
-              <TouchableOpacity key={p.id} style={s.resultItem} onPress={() => addToCart(p)}>
-                <View style={{flex: 1}}>
+            {results.map((p, idx) => (
+              <TouchableOpacity key={p.id} style={[s.resultItem, idx < results.length - 1 && s.resultBorder]} onPress={() => addToCart(p)}>
+                <View style={s.resultIconBox}>
+                  <Text style={s.resultEmoji}>💊</Text>
+                </View>
+                <View style={{ flex: 1 }}>
                   <Text style={s.resultName}>{p.name}</Text>
                   <Text style={s.resultPrice}>S/ {Number(p.price).toFixed(2)}</Text>
                 </View>
-                <View style={s.stockBadge}>
-                  <Text style={s.stockText}>Stock: {p.stock}</Text>
+                <View style={[s.stockBadge, p.stock < 10 && s.stockBadgeLow]}>
+                  <Text style={[s.stockText, p.stock < 10 && s.stockTextLow]}>
+                    {p.stock < 10 ? '⚠️ ' : ''}{p.stock} ud.
+                  </Text>
                 </View>
+                <Text style={s.addIcon}>＋</Text>
               </TouchableOpacity>
             ))}
           </View>
         )}
 
-        {/* Cart */}
+        {/* Cart Header */}
         <View style={s.cartHeaderRow}>
           <Text style={s.sectionTitle}>Carrito</Text>
-          <Text style={s.itemCount}>{cart.length} items</Text>
+          <Animated.View style={[s.cartBadge, { transform: [{ scale: cartBounce }] }]}>
+            <Text style={s.cartBadgeText}>{cart.reduce((n, i) => n + i.quantity, 0)}</Text>
+          </Animated.View>
         </View>
-        
+
+        {/* Cart List */}
         <View style={s.cartContainer}>
           <FlatList
             data={cart}
             keyExtractor={(i) => i.product_id}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 8 }}
             renderItem={({ item }) => (
               <View style={s.cartItem}>
+                <View style={s.cartIconBox}>
+                  <Text style={s.cartEmoji}>💊</Text>
+                </View>
                 <View style={s.cartItemLeft}>
-                  <Text style={s.cartName}>{item.name}</Text>
-                  <Text style={s.cartSub}>S/ {item.price.toFixed(2)} × {item.quantity}</Text>
+                  <Text style={s.cartName} numberOfLines={1}>{item.name}</Text>
+                  <Text style={s.cartSub}>S/ {item.price.toFixed(2)} c/u</Text>
+                </View>
+                {/* Qty controls */}
+                <View style={s.qtyRow}>
+                  <TouchableOpacity style={s.qtyBtn} onPress={() => updateQty(item.product_id, -1)}>
+                    <Text style={s.qtyBtnText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={s.qtyNum}>{item.quantity}</Text>
+                  <TouchableOpacity style={s.qtyBtn} onPress={() => updateQty(item.product_id, 1)}>
+                    <Text style={s.qtyBtnText}>＋</Text>
+                  </TouchableOpacity>
                 </View>
                 <Text style={s.cartTotal}>S/ {(item.price * item.quantity).toFixed(2)}</Text>
                 <TouchableOpacity onPress={() => removeFromCart(item.product_id)} style={s.removeBtn}>
@@ -123,95 +183,252 @@ export default function CashierPOS() {
             ListEmptyComponent={
               <View style={s.emptyContainer}>
                 <Text style={s.emptyIcon}>🛒</Text>
-                <Text style={s.empty}>Escanea o busca un producto</Text>
+                <Text style={s.emptyTitle}>Carrito vacío</Text>
+                <Text style={s.emptyText}>Busca un producto arriba para agregarlo</Text>
               </View>
             }
           />
         </View>
 
-        {/* Footer */}
+        {/* Footer / Checkout */}
         <View style={s.footer}>
           <View style={s.totalRow}>
-            <Text style={s.totalLabel}>Total a Pagar</Text>
+            <View>
+              <Text style={s.totalLabel}>TOTAL A PAGAR</Text>
+              <Text style={s.totalItems}>{cart.length} producto(s)</Text>
+            </View>
             <Text style={s.totalAmount}>S/ {total.toFixed(2)}</Text>
           </View>
-          <View style={s.payBtns}>
-            <TouchableOpacity style={[s.payBtn, { backgroundColor: 'rgba(16,185,129,0.2)', borderColor: 'rgba(16,185,129,0.4)' }]} onPress={() => handleSale('cash')} disabled={loading}>
-              <Text style={[s.payBtnText, { color: '#34d399' }]}>💵 Efectivo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[s.payBtn, { backgroundColor: 'rgba(59,130,246,0.2)', borderColor: 'rgba(59,130,246,0.4)' }]} onPress={() => handleSale('card')} disabled={loading}>
-              <Text style={[s.payBtnText, { color: '#60a5fa' }]}>💳 Tarjeta</Text>
-            </TouchableOpacity>
-          </View>
+
+          {loading ? (
+            <View style={s.loadingRow}>
+              <ActivityIndicator color="#f59e0b" size="small" />
+              <Text style={s.loadingText}>Procesando venta...</Text>
+            </View>
+          ) : (
+            <View style={s.payBtns}>
+              <TouchableOpacity
+                style={[s.payBtn, s.payBtnCash]}
+                onPress={() => handleSale('cash')}
+                disabled={loading || cart.length === 0}
+                activeOpacity={0.8}
+              >
+                <Text style={s.payBtnIcon}>💵</Text>
+                <Text style={[s.payBtnText, { color: '#34d399' }]}>Efectivo</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.payBtn, s.payBtnCard]}
+                onPress={() => handleSale('card')}
+                disabled={loading || cart.length === 0}
+                activeOpacity={0.8}
+              >
+                <Text style={s.payBtnIcon}>💳</Text>
+                <Text style={[s.payBtnText, { color: '#60a5fa' }]}>Tarjeta</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
-      </View>
-    </View>
+      </Animated.View>
+    </Animated.View>
   );
 }
 
 const s = StyleSheet.create({
-  wrapper: { flex: 1, backgroundColor: '#0f172a' },
-  gradientBg: { ...StyleSheet.absoluteFillObject },
-  circle1: { position: 'absolute', width: 350, height: 350, borderRadius: 175, backgroundColor: 'rgba(59,130,246,0.1)', top: -100, right: -100 },
-  circle2: { position: 'absolute', width: 250, height: 250, borderRadius: 125, backgroundColor: 'rgba(16,185,129,0.08)', bottom: 50, left: -80 },
-  container: { flex: 1, padding: 24, paddingTop: Platform.OS === 'ios' ? 60 : 40 },
-  
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
-  title: { fontSize: 28, fontWeight: '800', color: '#f1f5f9', letterSpacing: 0.5 },
-  logoutBtnSm: { backgroundColor: 'rgba(239,68,68,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  logoutTextSm: { color: '#fca5a5', fontWeight: '700', fontSize: 13 },
-
-  searchContainer: { 
-    flexDirection: 'row', alignItems: 'center', 
-    backgroundColor: 'rgba(15,23,42,0.6)', 
-    borderWidth: 1, borderColor: 'rgba(148,163,184,0.2)', 
-    borderRadius: 14, paddingHorizontal: 16, marginBottom: 16 
+  wrapper: { flex: 1, backgroundColor: '#050d17' },
+  circle1: {
+    position: 'absolute',
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    backgroundColor: 'rgba(245,158,11,0.08)',
+    top: -80,
+    right: -80,
   },
-  searchIcon: { fontSize: 18, marginRight: 10 },
-  searchInput: { flex: 1, paddingVertical: 14, fontSize: 16, color: '#f1f5f9' },
-  
-  resultsList: { 
-    backgroundColor: 'rgba(30,41,59,0.95)', 
-    borderRadius: 14, borderWidth: 1, borderColor: 'rgba(148,163,184,0.2)', 
-    marginBottom: 20, maxHeight: 200, zIndex: 10
+  circle2: {
+    position: 'absolute',
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: 'rgba(59,130,246,0.08)',
+    bottom: 100,
+    left: -60,
   },
-  resultItem: { padding: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(148,163,184,0.1)', flexDirection: 'row', alignItems: 'center' },
-  resultName: { fontWeight: '600', color: '#f1f5f9', fontSize: 15 },
-  resultPrice: { color: '#94a3b8', fontSize: 13, marginTop: 4 },
-  stockBadge: { backgroundColor: 'rgba(59,130,246,0.15)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  stockText: { color: '#60a5fa', fontSize: 12, fontWeight: '700' },
+  circle3: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(16,185,129,0.06)',
+    top: '40%',
+    right: 20,
+  },
+  container: { flex: 1, paddingHorizontal: 20, paddingTop: 20 },
 
-  cartHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#f1f5f9' },
-  itemCount: { fontSize: 14, color: '#94a3b8', fontWeight: '600' },
-  
+  sectionLabel: {
+    fontSize: 12,
+    color: '#94a3b8',
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  searchSection: { marginBottom: 12 },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15,23,42,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.25)',
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    shadowColor: '#f59e0b',
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+  },
+  searchIcon: { fontSize: 16, marginRight: 10 },
+  searchInput: { flex: 1, paddingVertical: 14, fontSize: 15, color: '#f8fafc' },
+  clearIcon: { color: '#94a3b8', fontSize: 16, padding: 4 },
+
+  resultsList: {
+    backgroundColor: 'rgba(15,23,42,0.96)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.2)',
+    marginBottom: 16,
+    maxHeight: 220,
+    zIndex: 100,
+    shadowColor: '#f59e0b',
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  resultItem: { padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  resultBorder: { borderBottomWidth: 1, borderBottomColor: 'rgba(148,163,184,0.08)' },
+  resultIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(245,158,11,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  resultEmoji: { fontSize: 16 },
+  resultName: { fontWeight: '700', color: '#f8fafc', fontSize: 14 },
+  resultPrice: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
+  stockBadge: { backgroundColor: 'rgba(59,130,246,0.15)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  stockBadgeLow: { backgroundColor: 'rgba(239,68,68,0.15)' },
+  stockText: { color: '#60a5fa', fontSize: 11, fontWeight: '800' },
+  stockTextLow: { color: '#f87171' },
+  addIcon: { color: '#fbbf24', fontSize: 20, fontWeight: '800', paddingLeft: 4 },
+
+  cartHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionTitle: { fontSize: 17, fontWeight: '900', color: '#f8fafc', letterSpacing: 0.3 },
+  cartBadge: {
+    backgroundColor: '#f59e0b',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#f59e0b',
+    shadowOpacity: 0.45,
+    shadowRadius: 8,
+  },
+  cartBadgeText: { color: '#111827', fontSize: 12, fontWeight: '900' },
+
   cartContainer: { flex: 1 },
-  cartItem: { 
-    backgroundColor: 'rgba(30,41,59,0.6)', 
-    padding: 16, borderRadius: 14, marginBottom: 8, 
-    flexDirection: 'row', alignItems: 'center', 
-    borderWidth: 1, borderColor: 'rgba(148,163,184,0.1)' 
+  cartItem: {
+    backgroundColor: 'rgba(15,23,42,0.82)',
+    padding: 12,
+    borderRadius: 16,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.08)',
+    shadowColor: '#020617',
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
   },
+  cartIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: 'rgba(245,158,11,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cartEmoji: { fontSize: 18 },
   cartItemLeft: { flex: 1 },
-  cartName: { fontWeight: '700', color: '#f1f5f9', fontSize: 15, marginBottom: 4 },
-  cartSub: { color: '#94a3b8', fontSize: 13 },
-  cartTotal: { fontWeight: '800', color: '#38bdf8', fontSize: 16, marginRight: 16 },
-  removeBtn: { backgroundColor: 'rgba(239,68,68,0.1)', width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  removeBtnText: { color: '#f87171', fontWeight: '800', fontSize: 14 },
-  
-  emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
-  emptyIcon: { fontSize: 48, marginBottom: 16, opacity: 0.5 },
-  empty: { textAlign: 'center', color: '#64748b', fontSize: 16, fontWeight: '500' },
-  
-  footer: { 
-    backgroundColor: 'rgba(15,23,42,0.8)', 
-    padding: 20, borderRadius: 20, marginTop: 16,
-    borderWidth: 1, borderColor: 'rgba(148,163,184,0.15)'
+  cartName: { fontWeight: '800', color: '#f8fafc', fontSize: 14 },
+  cartSub: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
+  qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  qtyBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: 'rgba(245,158,11,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.25)',
+  },
+  qtyBtnText: { color: '#fbbf24', fontWeight: '900', fontSize: 14 },
+  qtyNum: { color: '#f8fafc', fontWeight: '800', fontSize: 15, minWidth: 20, textAlign: 'center' },
+  cartTotal: { fontWeight: '900', color: '#fbbf24', fontSize: 14, minWidth: 60, textAlign: 'right' },
+  removeBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.2)',
+  },
+  removeBtnText: { color: '#f87171', fontWeight: '800', fontSize: 12 },
+
+  emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 48 },
+  emptyIcon: { fontSize: 52, marginBottom: 12, opacity: 0.4 },
+  emptyTitle: { fontSize: 16, fontWeight: '800', color: '#94a3b8', marginBottom: 6 },
+  emptyText: { fontSize: 13, color: '#64748b', textAlign: 'center' },
+
+  footer: {
+    backgroundColor: 'rgba(15,23,42,0.9)',
+    padding: 20,
+    borderRadius: 22,
+    marginTop: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.15)',
+    shadowColor: '#f59e0b',
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
   },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  totalLabel: { fontSize: 15, color: '#94a3b8', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-  totalAmount: { fontSize: 28, fontWeight: '800', color: '#f1f5f9' },
+  totalLabel: { fontSize: 11, color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
+  totalItems: { fontSize: 12, color: '#64748b', marginTop: 2 },
+  totalAmount: { fontSize: 32, fontWeight: '900', color: '#f8fafc', letterSpacing: -0.5 },
+
+  loadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 16 },
+  loadingText: { color: '#fbbf24', fontWeight: '700', fontSize: 14 },
+
   payBtns: { flexDirection: 'row', gap: 12 },
-  payBtn: { flex: 1, padding: 16, borderRadius: 14, alignItems: 'center', borderWidth: 1 },
+  payBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 8,
+  },
+  payBtnCash: { backgroundColor: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.35)' },
+  payBtnCard: { backgroundColor: 'rgba(59,130,246,0.12)', borderColor: 'rgba(59,130,246,0.35)' },
+  payBtnIcon: { fontSize: 20 },
   payBtnText: { fontWeight: '800', fontSize: 15, letterSpacing: 0.3 },
 });

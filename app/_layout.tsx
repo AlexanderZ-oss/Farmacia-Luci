@@ -39,22 +39,42 @@ export default function RootLayout() {
     const inStockerGroup = segments[0] === '(stocker)';
     const inCashierGroup = segments[0] === '(cashier)';
 
+    const goToRoleHome = () => {
+      if (role === 'admin') return '/(admin)';
+      if (role === 'stocker') return '/(stocker)';
+      if (role === 'cashier') return '/(cashier)';
+      return '/(store)';
+    };
+
     if (!session) {
-      // Not logged in: allow store and auth, redirect everything else
       if (!inAuthGroup && !inStoreGroup) {
         router.replace('/(store)');
       }
-    } else if (inAuthGroup) {
-      // Logged in but on auth screen: redirect to correct panel
-      if (role === 'admin') router.replace('/(admin)');
-      else if (role === 'stocker') router.replace('/(stocker)');
-      else if (role === 'cashier') router.replace('/(cashier)');
-      else router.replace('/(store)');
-    } else {
-      // Logged in: enforce role access to protected panels
-      if (inAdminGroup && role !== 'admin') router.replace('/(store)');
-      if (inStockerGroup && role !== 'stocker' && role !== 'admin') router.replace('/(store)');
-      if (inCashierGroup && role !== 'cashier' && role !== 'admin') router.replace('/(store)');
+      return;
+    }
+
+    if (inAuthGroup) {
+      router.replace(goToRoleHome());
+      return;
+    }
+
+    if (inAdminGroup && role !== 'admin') {
+      router.replace(goToRoleHome());
+      return;
+    }
+
+    if (inStockerGroup && role !== 'stocker') {
+      router.replace(goToRoleHome());
+      return;
+    }
+
+    if (inCashierGroup && role !== 'cashier') {
+      router.replace(goToRoleHome());
+      return;
+    }
+
+    if (!inAuthGroup && !inStoreGroup && !inAdminGroup && !inStockerGroup && !inCashierGroup && role !== 'customer') {
+      router.replace(goToRoleHome());
     }
   }, [session, isLoading, role, segments, isNavigationReady]);
 

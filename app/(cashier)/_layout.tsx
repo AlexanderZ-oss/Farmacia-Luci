@@ -39,6 +39,7 @@ export default function CashierLayout() {
 
   const isMain = pathname === '/(cashier)' || pathname === '/(cashier)/index';
   const isReceipts = pathname.includes('receipts');
+  const isSupport = pathname.includes('tickets');
 
   return (
     <View style={s.container}>
@@ -85,6 +86,13 @@ export default function CashierLayout() {
           >
             <Text style={s.tabIcon}>🧾</Text>
             <Text style={[s.tabText, isReceipts && s.tabTextActive]}>Recibos</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.tab, isSupport && s.tabActive]}
+            onPress={() => router.push('/(support)/tickets' as never)}
+          >
+            <Text style={s.tabIcon}>🎫</Text>
+            <Text style={[s.tabText, isSupport && s.tabTextActive]}>Soporte</Text>
           </TouchableOpacity>
         </View>
       </Animated.View>

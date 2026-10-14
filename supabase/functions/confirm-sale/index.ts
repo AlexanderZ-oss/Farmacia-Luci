@@ -19,11 +19,25 @@ serve(async (req) => {
     const { data: { user } } = await supabaseClient.auth.getUser();
     if (!user) throw new Error('Unauthorized');
 
-    const { data: profile } = await supabaseClient.from('profiles').select('role').eq('id', user.id).single();
-    if (!profile || profile.role !== 'cashier') throw new Error('Forbidden: solo cajeros');
+    const { data: profile } = await supabaseClient.from('profiles').select('role, is_active').eq('id', user.id).single();
+    if (!profile || profile.role !== 'cashier' || !profile.is_active) throw new Error('Forbidden: solo cajeros activos');
 
-    const { items, payment_method, age_verification_id } = await req.json();
+    const {
+      items,
+      payment_method,
+      age_verification_id,
+      customer_dni,
+      customer_name,
+    } = await req.json();
     if (!items || items.length === 0) throw new Error('No hay ítems en la venta');
+    const hasCustomerDni = typeof customer_dni === 'string' && customer_dni.length > 0;
+    const hasCustomerName = typeof customer_name === 'string' && customer_name.trim().length > 0;
+    if (hasCustomerDni !== hasCustomerName || (hasCustomerDni && (
+      !/^\d{8}$/.test(customer_dni)
+      || customer_name.trim().length < 3
+    ))) {
+      throw new Error('Consulta el DNI y verifica el nombre antes de emitir la boleta');
+    }
 
     const serviceClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -48,7 +62,11 @@ serve(async (req) => {
       p_total_amount: totalAmount,
       p_payment_method: payment_method,
       p_age_verification_id: age_verification_id || null,
-      p_items: saleItems,
+      p_items: {
+        items: saleItems,
+        customer_dni: customer_dni || null,
+        customer_name: customer_name?.trim() || null,
+      },
     });
     if (rpcError) throw rpcError;
 

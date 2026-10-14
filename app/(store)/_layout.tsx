@@ -42,6 +42,9 @@ export default function StoreLayout() {
 
           {session ? (
             <>
+              <TouchableOpacity onPress={() => router.push('/(support)/tickets' as never)} style={s.navItem}>
+                <Text style={s.navText}>Soporte</Text>
+              </TouchableOpacity>
               {(role === 'admin' || role === 'stocker' || role === 'cashier') && (
                 <TouchableOpacity onPress={handlePanelPress} style={s.panelBtn}>
                   <Text style={s.panelBtnText}>Mi Panel ↗</Text>

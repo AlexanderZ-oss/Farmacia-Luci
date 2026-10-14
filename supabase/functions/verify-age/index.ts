@@ -27,8 +27,20 @@ serve(async (req) => {
     const { data: { user } } = await supabaseClient.auth.getUser();
     if (!user) throw new Error('Unauthorized');
 
-    const { dni, context } = await req.json();
-    if (!dni || dni.length !== 8) throw new Error('DNI Inválido');
+    const { dni, context, action } = await req.json();
+    if (typeof dni !== 'string' || !/^\d{8}$/.test(dni)) throw new Error('DNI Inválido');
+    if (action !== undefined && action !== 'lookup') throw new Error('Acción inválida');
+
+    if (action === 'lookup') {
+      const { data: profile, error: profileError } = await supabaseClient
+        .from('profiles')
+        .select('role, is_active')
+        .eq('id', user.id)
+        .single();
+      if (profileError || profile?.role !== 'cashier' || !profile.is_active) {
+        throw new Error('Solo un cajero activo puede consultar DNI desde caja');
+      }
+    }
 
     // Consumo del API de ApisPeru
     const apisPeruToken = Deno.env.get('APISPERU_TOKEN');
@@ -40,6 +52,19 @@ serve(async (req) => {
     
     if (!response.ok) throw new Error('Falló la verificación del DNI');
     const data = await response.json();
+
+    if (action === 'lookup') {
+      if (!data?.dni) throw new Error('No se encontraron datos para el DNI');
+      if (String(data.dni) !== dni) throw new Error('La API devolvió un documento diferente al consultado');
+      const fullName = [data.nombre, data.apellidoPaterno, data.apellidoMaterno]
+        .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+        .map((part) => part.trim())
+        .join(' ');
+      if (!fullName) throw new Error('La consulta no devolvió el nombre del titular');
+      return new Response(JSON.stringify({ dni: data.dni, full_name: fullName }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     
     const result = data && data.dni ? 'approved' : 'rejected';
     const dniHash = await generateHash(dni);

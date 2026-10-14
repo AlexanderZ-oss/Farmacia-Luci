@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function StockerLayout() {
   const { signOut, role } = useAuthStore();
+  const isAdmin = role === 'admin';
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
@@ -13,7 +14,7 @@ export default function StockerLayout() {
   const slideAnim = useRef(new Animated.Value(-60)).current;
 
   useEffect(() => {
-    if (role && role !== 'stocker') {
+    if (role && role !== 'stocker' && role !== 'admin') {
       router.replace('/(store)');
       return;
     }
@@ -39,6 +40,7 @@ export default function StockerLayout() {
   const isProducts = pathname.includes('products');
   const isForm     = pathname.includes('product-form');
   const isStock    = pathname.includes('stock');
+  const isSupport  = pathname.includes('tickets');
 
   return (
     <View style={s.container}>
@@ -59,9 +61,14 @@ export default function StockerLayout() {
           </View>
 
           <View style={s.rightArea}>
+            {isAdmin && (
+              <TouchableOpacity style={s.adminBtn} onPress={() => router.replace('/(admin)' as never)}>
+                <Text style={s.adminBtnText}>ADMIN</Text>
+              </TouchableOpacity>
+            )}
             <Animated.View style={[s.roleBadge, { transform: [{ scale: pulseAnim }] }]}>
               <View style={s.roleDot} />
-              <Text style={s.roleText}>INVENTARIO</Text>
+              <Text style={s.roleText}>{isAdmin ? 'ADMIN' : 'INVENTARIO'}</Text>
             </Animated.View>
             <TouchableOpacity style={s.logoutBtn} onPress={() => signOut()}>
               <Text style={s.logoutText}>🚪</Text>
@@ -98,6 +105,13 @@ export default function StockerLayout() {
           >
             <Text style={s.tabIcon}>🔄</Text>
             <Text style={[s.tabText, isStock && s.tabTextActive]}>Stock</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.tab, isSupport && s.tabActive]}
+            onPress={() => router.push('/(support)/tickets' as never)}
+          >
+            <Text style={s.tabIcon}>🎫</Text>
+            <Text style={[s.tabText, isSupport && s.tabTextActive]}>Soporte</Text>
           </TouchableOpacity>
         </View>
       </Animated.View>
@@ -147,6 +161,8 @@ const s = StyleSheet.create({
   logoSub: { color: '#64748b', fontSize: 12, fontWeight: '500', marginTop: 1 },
 
   rightArea: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  adminBtn: { paddingHorizontal: 9, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(96,165,250,0.35)', backgroundColor: 'rgba(59,130,246,0.12)' },
+  adminBtnText: { color: '#93c5fd', fontSize: 10, fontWeight: '800' },
   roleBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: 'rgba(16,185,129,0.15)',

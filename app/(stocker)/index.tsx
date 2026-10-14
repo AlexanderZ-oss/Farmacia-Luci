@@ -1,6 +1,6 @@
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
-  ActivityIndicator, Animated, ScrollView,
+  ActivityIndicator, Animated, ScrollView, Alert,
 } from 'react-native';
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
@@ -36,16 +36,44 @@ export default function StockerDashboard() {
 
   async function fetchData() {
     setLoading(true);
-    const [lowRes, statsRes] = await Promise.all([
-      supabase.from('products').select('id, name, stock, min_stock').lt('stock', 10).order('stock', { ascending: true }).limit(20),
-      supabase.from('products').select('id, is_active, stock, min_stock'),
+    const [productsRes, settingRes] = await Promise.all([
+      supabase.from('products').select('id, name, is_active, stock, min_stock').order('id').range(0, 499),
+      supabase.from('pharmacy_settings').select('setting_value').eq('setting_key', 'low_stock_threshold').maybeSingle(),
     ]);
-    const products = statsRes.data || [];
-    setLowStock(lowRes.data || []);
+    if (productsRes.error || settingRes.error) {
+      Alert.alert('No se pudo cargar el inventario', productsRes.error?.message || settingRes.error?.message);
+      setLoading(false);
+      return;
+    }
+    const products = [...(productsRes.data || [])];
+    for (let from = 500; products.length === from; from += 500) {
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, name, is_active, stock, min_stock')
+        .order('id')
+        .range(from, from + 499);
+      if (error) {
+        Alert.alert('No se pudo cargar el inventario', error.message);
+        setLoading(false);
+        return;
+      }
+      products.push(...(data || []));
+      if ((data || []).length < 500) break;
+    }
+    const globalThreshold = Number(settingRes.data?.setting_value ?? 5);
+    if (!Number.isInteger(globalThreshold) || globalThreshold < 0) {
+      Alert.alert('Configuración inválida', 'El umbral global de stock bajo debe ser un entero igual o mayor que cero.');
+      setLoading(false);
+      return;
+    }
+    const lowProducts = products
+      .filter(product => product.is_active && product.stock <= Math.max(globalThreshold, product.min_stock ?? globalThreshold))
+      .sort((a, b) => a.stock - b.stock);
+    setLowStock(lowProducts.slice(0, 20));
     setStats({
       total: products.length,
       active: products.filter(p => p.is_active).length,
-      lowStockCount: products.filter(p => p.stock < (p.min_stock || 5)).length,
+      lowStockCount: lowProducts.length,
     });
     setLoading(false);
   }

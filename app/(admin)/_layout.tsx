@@ -6,8 +6,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const NAV_ITEMS = [
   { icon: '📊', label: 'Dashboard', route: '/(admin)', matchKey: 'index' },
+  { icon: '📦', label: 'Inventario', route: '/(stocker)/products', matchKey: 'products' },
+  { icon: '🛍️', label: 'Pedidos', route: '/(admin)/orders', matchKey: 'orders' },
   { icon: '👥', label: 'Usuarios', route: '/(admin)/users', matchKey: 'users' },
   { icon: '📈', label: 'Reportes', route: '/(admin)/reports', matchKey: 'reports' },
+  { icon: '🎫', label: 'Soporte', route: '/(support)/tickets', matchKey: 'tickets' },
   { icon: '⚙️', label: 'Config.', route: '/(admin)/settings', matchKey: 'settings' },
 ];
 

@@ -39,6 +39,7 @@ export default function RootLayout() {
     const inAdminGroup = segments[0] === '(admin)';
     const inStockerGroup = segments[0] === '(stocker)';
     const inCashierGroup = segments[0] === '(cashier)';
+    const inSupportGroup = segments[0] === '(support)';
 
     const goToRoleHome = () => {
       if (role === 'admin') return '/(admin)';
@@ -69,7 +70,7 @@ export default function RootLayout() {
       return;
     }
 
-    if (inStockerGroup && role !== 'stocker') {
+    if (inStockerGroup && role !== 'stocker' && role !== 'admin') {
       router.replace(goToRoleHome());
       return;
     }
@@ -79,7 +80,7 @@ export default function RootLayout() {
       return;
     }
 
-    if (!inAuthGroup && !inStoreGroup && !inAdminGroup && !inStockerGroup && !inCashierGroup && role !== 'customer') {
+    if (!inAuthGroup && !inStoreGroup && !inAdminGroup && !inStockerGroup && !inCashierGroup && !inSupportGroup && role !== 'customer') {
       router.replace(goToRoleHome());
     }
   }, [session, isLoading, role, segments, isNavigationReady, params.returnTo]);

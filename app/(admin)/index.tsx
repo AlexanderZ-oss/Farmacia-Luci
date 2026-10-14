@@ -1,10 +1,10 @@
-import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated, Alert } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { useAuthStore } from '../../stores/authStore';
+import { useRouter } from 'expo-router';
 
 export default function AdminDashboard() {
-  const { session } = useAuthStore();
+  const router = useRouter();
   const [stats, setStats] = useState({ sales: 0, products: 0, lowStock: 0, users: 0 });
   const [recentSales, setRecentSales] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -12,7 +12,6 @@ export default function AdminDashboard() {
   // Animations
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
-  const countAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -25,31 +24,72 @@ export default function AdminDashboard() {
   async function fetchStats() {
     setLoading(true);
     try {
-      const [prodRes, lowRes, usersRes, salesRes] = await Promise.all([
-        supabase.from('products').select('id', { count: 'exact' }).eq('is_active', true),
-        supabase.from('products').select('id', { count: 'exact' }).lt('stock', 10),
+      const [prodRes, usersRes, salesRes, settingRes] = await Promise.all([
+        supabase.from('products').select('id, stock, min_stock', { count: 'exact' }).eq('is_active', true).order('id').range(0, 499),
         supabase.from('profiles').select('id', { count: 'exact' }),
         supabase.from('sales').select('id, total_amount, payment_method, created_at').order('created_at', { ascending: false }).limit(5),
+        supabase.from('pharmacy_settings').select('setting_value').eq('setting_key', 'low_stock_threshold').maybeSingle(),
       ]);
-      const dayTotal = (salesRes.data || []).reduce((s: number, x: any) => s + Number(x.total_amount), 0);
+      const failed = [prodRes, usersRes, salesRes, settingRes].find((result) => result.error);
+      if (failed?.error) throw failed.error;
+
+      const threshold = Number(settingRes.data?.setting_value ?? 5);
+      if (!Number.isInteger(threshold) || threshold < 0) throw new Error('El umbral de stock bajo guardado no es válido.');
+      const products = [...(prodRes.data ?? [])];
+      for (let from = 500; products.length === from; from += 500) {
+        const { data, error } = await supabase
+          .from('products')
+          .select('id, stock, min_stock')
+          .eq('is_active', true)
+          .order('id')
+          .range(from, from + 499);
+        if (error) throw error;
+        products.push(...(data ?? []));
+        if ((data ?? []).length < 500) break;
+      }
+      const lowStock = products.filter((product) => (
+        product.stock <= Math.max(threshold, product.min_stock ?? threshold)
+      )).length;
+
+      const dayStart = new Date();
+      dayStart.setHours(0, 0, 0, 0);
+      let dayTotal = 0;
+      for (let from = 0; ; from += 500) {
+        const { data, error } = await supabase
+          .from('sales')
+          .select('total_amount')
+          .eq('status', 'completed')
+          .gte('created_at', dayStart.toISOString())
+          .range(from, from + 499);
+        if (error) throw error;
+        const page = data ?? [];
+        dayTotal += page.reduce((sum, sale) => sum + Number(sale.total_amount), 0);
+        if (page.length < 500) break;
+      }
       setStats({
         sales: dayTotal,
         products: prodRes.count || 0,
-        lowStock: lowRes.count || 0,
+        lowStock,
         users: usersRes.count || 0,
       });
       setRecentSales(salesRes.data || []);
-    } catch (e) {
-      // fallback silently
+    } catch (error) {
+      Alert.alert('No se pudo cargar el panel', error instanceof Error ? error.message : 'Error desconocido');
     }
     setLoading(false);
   }
 
   const statCards = [
-    { icon: '💰', label: 'Ventas Recientes', value: `S/ ${stats.sales.toFixed(2)}`, trend: '+12.5%', trendPos: true, color: 'rgba(59,130,246,0.2)', border: 'rgba(59,130,246,0.3)' },
+    { icon: '💰', label: 'Ventas de Hoy', value: `S/ ${stats.sales.toFixed(2)}`, trend: 'Ventas completadas', trendPos: true, color: 'rgba(59,130,246,0.2)', border: 'rgba(59,130,246,0.3)' },
     { icon: '⚠️', label: 'Stock Bajo', value: `${stats.lowStock} items`, trend: 'Requieren atención', trendPos: false, color: 'rgba(239,68,68,0.2)', border: 'rgba(239,68,68,0.3)' },
     { icon: '📦', label: 'Productos', value: `${stats.products}`, trend: 'Activos', trendPos: true, color: 'rgba(16,185,129,0.2)', border: 'rgba(16,185,129,0.3)' },
     { icon: '👥', label: 'Usuarios', value: `${stats.users}`, trend: 'Registrados', trendPos: true, color: 'rgba(139,92,246,0.2)', border: 'rgba(139,92,246,0.3)' },
+  ];
+  const quickActions = [
+    { icon: '📦', label: 'Editar inventario', route: '/(stocker)/products' },
+    { icon: '🛍️', label: 'Gestionar pedidos', route: '/(admin)/orders' },
+    { icon: '🎫', label: 'Revisar tickets', route: '/(support)/tickets' },
+    { icon: '👥', label: 'Administrar usuarios', route: '/(admin)/users' },
   ];
 
   return (
@@ -102,6 +142,16 @@ export default function AdminDashboard() {
                 <Text style={s.statValue}>{loading ? '—' : card.value}</Text>
                 <Text style={[s.statTrend, card.trendPos ? s.trendPos : s.trendNeg]}>{card.trend}</Text>
               </Animated.View>
+            ))}
+          </View>
+
+          <Text style={s.sectionTitle}>Acciones rápidas</Text>
+          <View style={s.quickActions}>
+            {quickActions.map((action) => (
+              <TouchableOpacity key={action.label} style={s.quickAction} onPress={() => router.push(action.route as never)}>
+                <Text style={s.quickActionIcon}>{action.icon}</Text>
+                <Text style={s.quickActionText}>{action.label}</Text>
+              </TouchableOpacity>
             ))}
           </View>
 
@@ -232,6 +282,10 @@ const s = StyleSheet.create({
   },
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginBottom: 32 },
+  quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: -4, marginBottom: 28 },
+  quickAction: { minWidth: 170, flexGrow: 1, flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: 'rgba(15,23,42,0.82)', borderRadius: 12, paddingHorizontal: 13, paddingVertical: 12, borderWidth: 1, borderColor: 'rgba(148,163,184,0.16)' },
+  quickActionIcon: { fontSize: 16 },
+  quickActionText: { color: '#cbd5e1', fontSize: 12, fontWeight: '700' },
   statCard: {
     minWidth: '45%',
     flex: 1,

@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,14 @@ import {
   Platform,
   Animated,
   ScrollView,
+  Image,
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import * as Network from 'expo-network';
+import { useFonts, Inter_400Regular } from '@expo-google-fonts/inter';
+import AppLoading from 'expo-app-loading';
 
 export default function LoginScreen() {
   const params = useLocalSearchParams<{ mode?: string; returnTo?: string }>();
@@ -23,6 +28,9 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [fontsLoaded] = useFonts({ Inter_400Regular });
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -51,6 +59,128 @@ export default function LoginScreen() {
     r2.start();
 
     return () => {
+      floatLoop.stop();
+      r1.stop();
+      r2.stop();
+    };
+  }, []);
+
+  const spin1 = rotate1.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const spin2 = rotate2.interpolate({ inputRange: [-1, 0], outputRange: ['-360deg', '0deg'] });
+
+  // Network connectivity check helper
+  async function ensureNetwork() {
+    const net = await Network.getNetworkStateAsync();
+    if (!net.isConnected) {
+      Alert.alert('Sin conexión', 'Por favor verifica tu conexión a internet antes de continuar.');
+      return false;
+    }
+    return true;
+  }
+
+  async function pickImage() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permiso requerido', 'Necesitamos permiso para acceder a la galería de fotos.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+    if (!result.cancelled) {
+      setImageUri(result.uri);
+    }
+  }
+
+  async function uploadAvatar(uri: string) {
+    try {
+      setUploading(true);
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      const ext = uri.split('.').pop();
+      const fileName = `${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, blob, { upsert: true });
+      if (uploadError) {
+        Alert.alert('Error al subir avatar', uploadError.message);
+        return null;
+      }
+      const { data: publicData } = supabase.storage.from('avatars').getPublicUrl(fileName);
+      return publicData.publicUrl;
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo subir la imagen.');
+      return null;
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function performLogin(targetEmail: string, targetPass: string) {
+    if (!(await ensureNetwork())) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: targetEmail, password: targetPass });
+      if (error) {
+        Alert.alert('Error al ingresar', error.message);
+        return;
+      }
+      if (returnToCheckout) router.replace('/(store)/checkout');
+    } catch (error) {
+      Alert.alert('Error al ingresar', error instanceof Error ? error.message : 'No se pudo iniciar sesión.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleAuth() {
+    if (!(await ensureNetwork())) return;
+    if (!email || !password) {
+      Alert.alert('Completa todos los campos', 'Necesitas ingresar correo y contraseña.');
+      return;
+    }
+
+    if (isLogin) {
+      await performLogin(email, password);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) {
+        Alert.alert('Error al registrar', error.message);
+      } else if (data.session && returnToCheckout) {
+        router.replace('/(store)/checkout');
+      } else if (data.session) {
+        // Optional: upload avatar if selected
+        let avatarUrl = null;
+        if (imageUri) {
+          avatarUrl = await uploadAvatar(imageUri);
+          if (avatarUrl) {
+            await supabase.auth.updateUser({ data: { avatar_url: avatarUrl } });
+          }
+        }
+        Alert.alert('Cuenta creada', 'Tu cuenta de cliente está lista.');
+      } else {
+        setIsLogin(true);
+        Alert.alert(
+          'Confirma tu correo',
+          'Te enviamos un enlace de confirmación. Cuando confirmes tu correo, inicia sesión para continuar con tu compra.',
+        );
+      }
+    } catch (error) {
+      Alert.alert('Error al registrar', error instanceof Error ? error.message : 'No se pudo crear la cuenta.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!fontsLoaded) {
+    return <AppLoading />;
+  }
+
       floatLoop.stop();
       r1.stop();
       r2.stop();
@@ -143,6 +273,17 @@ export default function LoginScreen() {
             </View>
 
             <View style={styles.form}>
+              { !isLogin && (
+                <TouchableOpacity style={styles.avatarContainer} onPress={pickImage} disabled={uploading}>
+                  {imageUri ? (
+                    <Image source={{ uri: imageUri }} style={styles.avatarImage} />
+                  ) : (
+                    <View style={styles.avatarPlaceholder}>
+                      <Text style={styles.avatarPlaceholderText}>Añadir foto</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Correo electrónico</Text>
                 <View style={styles.inputWrapper}>
@@ -397,6 +538,21 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 8,
   },
+  avatarContainer: {
+    alignSelf: 'center',
+    marginBottom: 12,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: { width: '100%', height: '100%' },
+  avatarPlaceholder: { justifyContent: 'center', alignItems: 'center' },
+  avatarPlaceholderText: { color: '#94a3b8', fontSize: 12 }
+
   buttonDisabled: { opacity: 0.72 },
   buttonText: { color: '#fff', fontWeight: '900', fontSize: 15 },
 

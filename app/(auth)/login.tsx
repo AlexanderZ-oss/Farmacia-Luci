@@ -11,13 +11,11 @@ import {
   Animated,
   ScrollView,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import * as Network from 'expo-network';
-import { useFonts, Inter_400Regular } from '@expo-google-fonts/inter';
-import AppLoading from 'expo-app-loading';
 
 export default function LoginScreen() {
   const params = useLocalSearchParams<{ mode?: string; returnTo?: string }>();
@@ -30,7 +28,6 @@ export default function LoginScreen() {
   const router = useRouter();
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [fontsLoaded] = useFonts({ Inter_400Regular });
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -68,16 +65,6 @@ export default function LoginScreen() {
   const spin1 = rotate1.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
   const spin2 = rotate2.interpolate({ inputRange: [-1, 0], outputRange: ['-360deg', '0deg'] });
 
-  // Network connectivity check helper
-  async function ensureNetwork() {
-    const net = await Network.getNetworkStateAsync();
-    if (!net.isConnected) {
-      Alert.alert('Sin conexión', 'Por favor verifica tu conexión a internet antes de continuar.');
-      return false;
-    }
-    return true;
-  }
-
   async function pickImage() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -90,8 +77,8 @@ export default function LoginScreen() {
       aspect: [1, 1],
       quality: 0.7,
     });
-    if (!result.cancelled) {
-      setImageUri(result.uri);
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setImageUri(result.assets[0].uri);
     }
   }
 
@@ -118,7 +105,6 @@ export default function LoginScreen() {
   }
 
   async function performLogin(targetEmail: string, targetPass: string) {
-    if (!(await ensureNetwork())) return;
     setLoading(true);
     try {
       const { error } = await supabase.auth.signInWithPassword({ email: targetEmail, password: targetPass });
@@ -135,7 +121,6 @@ export default function LoginScreen() {
   }
 
   async function handleAuth() {
-    if (!(await ensureNetwork())) return;
     if (!email || !password) {
       Alert.alert('Completa todos los campos', 'Necesitas ingresar correo y contraseña.');
       return;
@@ -162,69 +147,6 @@ export default function LoginScreen() {
             await supabase.auth.updateUser({ data: { avatar_url: avatarUrl } });
           }
         }
-        Alert.alert('Cuenta creada', 'Tu cuenta de cliente está lista.');
-      } else {
-        setIsLogin(true);
-        Alert.alert(
-          'Confirma tu correo',
-          'Te enviamos un enlace de confirmación. Cuando confirmes tu correo, inicia sesión para continuar con tu compra.',
-        );
-      }
-    } catch (error) {
-      Alert.alert('Error al registrar', error instanceof Error ? error.message : 'No se pudo crear la cuenta.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (!fontsLoaded) {
-    return <AppLoading />;
-  }
-
-      floatLoop.stop();
-      r1.stop();
-      r2.stop();
-    };
-  }, []);
-
-  const spin1 = rotate1.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-  const spin2 = rotate2.interpolate({ inputRange: [-1, 0], outputRange: ['-360deg', '0deg'] });
-
-  async function performLogin(targetEmail: string, targetPass: string) {
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email: targetEmail, password: targetPass });
-      if (error) {
-        Alert.alert('Error al ingresar', error.message);
-        return;
-      }
-      if (returnToCheckout) router.replace('/(store)/checkout');
-    } catch (error) {
-      Alert.alert('Error al ingresar', error instanceof Error ? error.message : 'No se pudo iniciar sesión.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleAuth() {
-    if (!email || !password) {
-      Alert.alert('Completa todos los campos', 'Necesitas ingresar correo y contraseña.');
-      return;
-    }
-
-    if (isLogin) {
-      await performLogin(email, password);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.auth.signUp({ email, password });
-      if (error) {
-        Alert.alert('Error al registrar', error.message);
-      } else if (data.session && returnToCheckout) {
-        router.replace('/(store)/checkout');
-      } else if (data.session) {
         Alert.alert('Cuenta creada', 'Tu cuenta de cliente está lista.');
       } else {
         setIsLogin(true);
@@ -273,13 +195,16 @@ export default function LoginScreen() {
             </View>
 
             <View style={styles.form}>
-              { !isLogin && (
+              {!isLogin && (
                 <TouchableOpacity style={styles.avatarContainer} onPress={pickImage} disabled={uploading}>
                   {imageUri ? (
                     <Image source={{ uri: imageUri }} style={styles.avatarImage} />
                   ) : (
                     <View style={styles.avatarPlaceholder}>
-                      <Text style={styles.avatarPlaceholderText}>Añadir foto</Text>
+                      {uploading
+                        ? <ActivityIndicator color="#94a3b8" />
+                        : <Text style={styles.avatarPlaceholderText}>Añadir foto</Text>
+                      }
                     </View>
                   )}
                 </TouchableOpacity>
@@ -551,7 +476,7 @@ const styles = StyleSheet.create({
   },
   avatarImage: { width: '100%', height: '100%' },
   avatarPlaceholder: { justifyContent: 'center', alignItems: 'center' },
-  avatarPlaceholderText: { color: '#94a3b8', fontSize: 12 }
+  avatarPlaceholderText: { color: '#94a3b8', fontSize: 12 },
 
   buttonDisabled: { opacity: 0.72 },
   buttonText: { color: '#fff', fontWeight: '900', fontSize: 15 },

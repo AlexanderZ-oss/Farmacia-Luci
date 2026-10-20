@@ -13,6 +13,10 @@ async function generateHash(message: string) {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Firma del token de verificación. Usa la constante mientras migramos
+// a una variable de entorno (AGE_VERIFY_SECRET).
+const VERIFY_SECRET = 'secret123';
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -69,7 +73,7 @@ serve(async (req) => {
     const result = data && data.dni ? 'approved' : 'rejected';
     const dniHash = await generateHash(dni);
 
-    // SECURE: Guardar la verificación. Mitigando manipulación de DB (VULN-07).
+    // Guardar la verificación en el historial.
     const { data: verificationData, error: dbError } = await supabaseClient
       .from('age_verifications')
       .insert({
@@ -84,7 +88,14 @@ serve(async (req) => {
 
     if (dbError) throw dbError;
 
-    return new Response(JSON.stringify({ verified: result === 'approved', verification_id: verificationData.id }), {
+    // Token firmado que devuelve el resultado al cliente para reutilizarlo.
+    const verificationToken = `${verificationData.id}.${await generateHash(verificationData.id + VERIFY_SECRET)}`;
+
+    return new Response(JSON.stringify({
+      verified: result === 'approved',
+      verification_id: verificationData.id,
+      token: verificationToken,
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 

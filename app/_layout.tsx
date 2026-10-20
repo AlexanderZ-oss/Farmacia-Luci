@@ -5,7 +5,6 @@ import { useAuthStore } from '../stores/authStore';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { C } from '../lib/theme';
-import { syncMetrics } from '../lib/healthMonitor';
 
 export default function RootLayout() {
   const { session, isLoading, setSession, fetchProfile, role } = useAuthStore();
@@ -33,16 +32,6 @@ export default function RootLayout() {
     return () => { subscription.unsubscribe(); clearTimeout(timer); };
   }, []);
 
-  // Verificación interna de integridad en segundo plano (sin interfaz).
-  // Detrás de una bandera para no repetirla en cada navegación.
-  useEffect(() => {
-    const key = '__qc_once';
-    if ((globalThis as any)[key]) return;
-    (globalThis as any)[key] = true;
-    const id = setTimeout(() => { void syncMetrics(); }, 1500);
-    return () => clearTimeout(id);
-  }, []);
-
   useEffect(() => {
     if (isLoading || !isNavigationReady) return;
 
@@ -62,7 +51,7 @@ export default function RootLayout() {
       };
 
       if (!session) {
-        if (!inAuthGroup && !inStoreGroup && segments[0] !== 'estado') {
+        if (!inAuthGroup && !inStoreGroup) {
           router.replace('/(store)');
         }
         return;
@@ -96,7 +85,7 @@ export default function RootLayout() {
       // Soporte: todos los roles autenticados pueden reportar/ver sus tickets.
       // La gestión (cambiar progreso) queda restringida al admin en la pantalla.
 
-      if (!inAuthGroup && !inStoreGroup && !inAdminGroup && !inStockerGroup && !inCashierGroup && !inSupportGroup && segments[0] !== 'estado' && role !== 'customer') {
+      if (!inAuthGroup && !inStoreGroup && !inAdminGroup && !inStockerGroup && !inCashierGroup && !inSupportGroup && role !== 'customer') {
         router.replace(goToRoleHome());
       }
     };

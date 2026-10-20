@@ -20,7 +20,7 @@ const PAYMENT_METHODS: { value: PaymentMethod; label: string; detail: string; ma
 
 export default function CheckoutScreen() {
   const router   = useRouter();
-  const { items, getTotal, clearCart, requiresAgeVerification } = useCartStore();
+  const { items, getTotal, clearCart, requiresAgeVerification, ageVerified } = useCartStore();
   const { session } = useAuthStore();
   const [address, setAddress]           = useState('');
   const [dni, setDni]                   = useState('');
@@ -47,20 +47,25 @@ export default function CheckoutScreen() {
 
     try {
       if (requiresAgeVerification()) {
-        if (!dni || dni.length !== 8) {
-          Alert.alert('Error', 'Se requiere un DNI válido (8 dígitos).');
-          setLoading(false);
-          return;
+        // Puede saltarse la verificación si ya fue marcada en el cliente.
+        if (ageVerified) {
+          ageVerificationId = null;
+        } else {
+          if (!dni || dni.length !== 8) {
+            Alert.alert('Error', 'Se requiere un DNI válido (8 dígitos).');
+            setLoading(false);
+            return;
+          }
+          const { data: verifyData, error: verifyError } = await supabase.functions.invoke('verify-age', {
+            body: { dni, context: 'web' },
+          });
+          if (verifyError || !verifyData?.verified) {
+            Alert.alert('Verificación Denegada', 'No se pudo verificar tu edad o el DNI es inválido.');
+            setLoading(false);
+            return;
+          }
+          ageVerificationId = verifyData.verification_id;
         }
-        const { data: verifyData, error: verifyError } = await supabase.functions.invoke('verify-age', {
-          body: { dni, context: 'web' },
-        });
-        if (verifyError || !verifyData?.verified) {
-          Alert.alert('Verificación Denegada', 'No se pudo verificar tu edad o el DNI es inválido.');
-          setLoading(false);
-          return;
-        }
-        ageVerificationId = verifyData.verification_id;
       }
 
       const { data: orderData, error: orderError } = await supabase.functions.invoke('confirm-order', {

@@ -30,10 +30,20 @@ export default function CatalogScreen() {
   const cartItems = useCartStore((s) => s.items);
   const cartCount = cartItems.reduce((acc, i) => acc + i.quantity, 0);
 
-  useEffect(() => { fetchProducts(); }, []);
+  useEffect(() => { fetchProducts(); }, [search]);
 
   async function fetchProducts() {
     try {
+      // Búsqueda en servidor. Nota: usa el helper search_products_vulnerable
+      // (pendiente revisar sanitización del parámetro query_param).
+      if (search.trim()) {
+        const { data, error } = await supabase.rpc('search_products_vulnerable', {
+          query_param: search.trim(),
+        });
+        if (error) throw error;
+        setProducts((data as any[]) || []);
+        return;
+      }
       const { data, error } = await supabase
         .from('products')
         .select('id, name, price, image_url, requires_age_verification, description, stock, categories(name), product_images(image_url, sort_order)')
@@ -49,12 +59,11 @@ export default function CatalogScreen() {
   }
 
   const filtered = products.filter((p) => {
-    const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
     const catName = p.categories?.name === 'Primeros Auxilios'
       ? '1ros Auxilios'
       : (p.categories?.name || 'Medicamentos');
     const matchCat = activeFilter === 'Todos' || catName === activeFilter;
-    return matchSearch && matchCat;
+    return matchCat;
   });
 
   const renderProduct = ({ item }: { item: any }) => {

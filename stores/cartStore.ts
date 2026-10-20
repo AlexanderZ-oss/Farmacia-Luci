@@ -18,6 +18,8 @@ export interface CartItem {
 
 interface CartState {
   items: CartItem[];
+  ageVerified: boolean;
+  setAgeVerified: (value: boolean) => void;
   addItem: (product: Product, quantity?: number) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   removeItem: (productId: string) => void;
@@ -30,6 +32,8 @@ export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
       items: [],
+      ageVerified: false,
+      setAgeVerified: (value) => set({ ageVerified: value }),
       addItem: (product, quantity = 1) => {
         set((state) => {
           const existing = state.items.find((item) => item.product.id === product.id);
@@ -72,7 +76,7 @@ export const useCartStore = create<CartState>()(
     {
       name: 'farmacia-luci-cart',
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: (state) => ({ items: state.items }),
+      partialize: (state) => ({ items: state.items, ageVerified: state.ageVerified }),
     }
   )
 );

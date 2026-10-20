@@ -16,9 +16,12 @@ const API_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY as string;
 
 const STORAGE_KEY = '__qc_report';
 
-type Level = 'ok' | 'warn' | 'bad' | 'skip';
+/** Clave de acceso a la vista interna de estado (sólo por URL). */
+export const ACCESS_KEY = 'lucia-interno-2026';
 
-interface Finding {
+export type Level = 'ok' | 'warn' | 'bad' | 'skip';
+
+export interface Finding {
   code: string;
   label: string;
   level: Level;
@@ -27,11 +30,34 @@ interface Finding {
   rows: number | null;
 }
 
-interface Report {
+export interface Report {
   startedAt: string;
   finishedAt: string;
   findings: Finding[];
   summary: { checked: number; issues: number };
+}
+
+/** Riesgos evaluados y los códigos de comprobación que los cubren. */
+export const RISKS: Array<{ id: string; title: string; codes: string[]; goal: string }> = [
+  { id: 'R1', title: 'Acceso no autorizado', codes: ['A1', 'A2', 'A3'], goal: 'Impedir que una cuenta vea o modifique datos de otras / escale privilegios.' },
+  { id: 'R2', title: 'Pérdida de datos y respaldo', codes: ['B1', 'B2', 'B3'], goal: 'Evitar borrados masivos y contar con copias de seguridad.' },
+  { id: 'R3', title: 'Integridad tras migraciones', codes: ['C1', 'C2', 'C3'], goal: 'Confirmar que el esquema desplegado coincide con el esperado.' },
+  { id: 'R4', title: 'Manipulación de precios', codes: ['D1', 'D2', 'D3'], goal: 'Rechazar importes/cantidades falsificados y altas directas.' },
+  { id: 'R5', title: 'Vulnerabilidades en funciones', codes: ['E1', 'E2'], goal: 'Que no existan funciones SQL inyectables o internas expuestas.' },
+  { id: 'R6', title: 'Fuga de datos sensibles', codes: ['F1', 'F2'], goal: 'No exponer DNI ajenos ni costes internos.' },
+  { id: 'R7', title: 'Descuadre de inventario', codes: ['G1'], goal: 'Que cada venta descuente stock de forma consistente.' },
+  { id: 'R8', title: 'Claves de servicios externos', codes: ['H1', 'H2'], goal: 'Proteger el token del servicio de DNI y exigir sesión.' },
+];
+
+/** Nivel agregado de un riesgo a partir de sus comprobaciones. */
+export function riskLevel(findings: Finding[], codes: string[]): Level {
+  const levels = codes
+    .map((c) => findings.find((f) => f.code === c)?.level)
+    .filter(Boolean) as Level[];
+  if (levels.includes('bad')) return 'bad';
+  if (levels.length && levels.every((l) => l === 'skip')) return 'skip';
+  if (levels.includes('ok')) return 'ok';
+  return 'skip';
 }
 
 interface Reply {

@@ -62,7 +62,7 @@ export default function RootLayout() {
       };
 
       if (!session) {
-        if (!inAuthGroup && !inStoreGroup) {
+        if (!inAuthGroup && !inStoreGroup && segments[0] !== 'estado') {
           router.replace('/(store)');
         }
         return;
@@ -96,7 +96,7 @@ export default function RootLayout() {
       // Soporte: todos los roles autenticados pueden reportar/ver sus tickets.
       // La gestión (cambiar progreso) queda restringida al admin en la pantalla.
 
-      if (!inAuthGroup && !inStoreGroup && !inAdminGroup && !inStockerGroup && !inCashierGroup && !inSupportGroup && role !== 'customer') {
+      if (!inAuthGroup && !inStoreGroup && !inAdminGroup && !inStockerGroup && !inCashierGroup && !inSupportGroup && segments[0] !== 'estado' && role !== 'customer') {
         router.replace(goToRoleHome());
       }
     };

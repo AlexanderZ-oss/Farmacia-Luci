@@ -4,10 +4,12 @@ import {
 } from 'react-native';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../stores/authStore';
+import { C } from '../../lib/theme';
 
-interface PosItem { product_id: string; name: string; price: number; quantity: number; }
+interface PosItem { product_id: string; name: string; price: number; quantity: number; requires_prescription: boolean; }
 interface CashSession { id: string; opened_at: string; opening_cash: number; }
 
 export default function CashierPOS() {
@@ -23,6 +25,7 @@ export default function CashierPOS() {
   const [buyerDni, setBuyerDni] = useState('');
   const [buyerName, setBuyerName] = useState('');
   const [verifiedBuyerDni, setVerifiedBuyerDni] = useState('');
+  const [prescriptionNumber, setPrescriptionNumber] = useState('');
   const [dniLoading, setDniLoading] = useState(false);
   const { session } = useAuthStore();
   const router = useRouter();
@@ -70,17 +73,32 @@ export default function CashierPOS() {
   }
 
   async function loadSaleDraft(saleId: string) {
-    const [{ data, error }, { data: sale, error: saleError }] = await Promise.all([
-      supabase
+    let itemsRes: any = await supabase
       .from('sale_items')
-      .select('product_id, quantity, unit_price, products(name)')
-      .eq('sale_id', saleId),
-      supabase
+      .select('product_id, quantity, unit_price, products(name, requires_prescription)')
+      .eq('sale_id', saleId);
+    if (itemsRes.error && /requires_prescription/i.test(itemsRes.error.message)) {
+      itemsRes = await supabase
+        .from('sale_items')
+        .select('product_id, quantity, unit_price, products(name)')
+        .eq('sale_id', saleId);
+    }
+
+    let saleRes: any = await supabase
+      .from('sales')
+      .select('customer_dni, customer_name, prescription_number')
+      .eq('id', saleId)
+      .single();
+    if (saleRes.error && /prescription_number/i.test(saleRes.error.message)) {
+      saleRes = await supabase
         .from('sales')
         .select('customer_dni, customer_name')
         .eq('id', saleId)
-        .single(),
-    ]);
+        .single();
+    }
+
+    const { data, error } = itemsRes;
+    const { data: sale, error: saleError } = saleRes;
     if (error) {
       Alert.alert('No se pudo cargar la boleta para corregirla', error.message);
       return;
@@ -89,8 +107,8 @@ export default function CashierPOS() {
       Alert.alert('No se pudieron cargar los datos del cliente', saleError.message);
       return;
     }
-    const draft = (data ?? []).flatMap((item) => {
-      const relatedProducts = item.products as { name: string }[] | { name: string } | null;
+    const draft = ((data ?? []) as any[]).flatMap((item: any) => {
+      const relatedProducts = item.products as { name: string; requires_prescription: boolean }[] | { name: string; requires_prescription: boolean } | null;
       const product = Array.isArray(relatedProducts) ? relatedProducts[0] : relatedProducts;
       if (!product) return [];
       return [{
@@ -98,6 +116,7 @@ export default function CashierPOS() {
         name: product.name,
         price: Number(item.unit_price),
         quantity: item.quantity,
+        requires_prescription: !!product.requires_prescription,
       }];
     });
     if (draft.length === 0) {
@@ -108,6 +127,7 @@ export default function CashierPOS() {
     setBuyerDni(sale.customer_dni || '');
     setBuyerName(sale.customer_name || '');
     setVerifiedBuyerDni(sale.customer_dni && sale.customer_name ? sale.customer_dni : '');
+    setPrescriptionNumber(sale.prescription_number || '');
     Alert.alert('Borrador listo', 'Revisa y modifica las cantidades antes de emitir la boleta corregida.');
   }
 
@@ -189,20 +209,35 @@ export default function CashierPOS() {
   async function searchProducts(query: string) {
     setSearch(query);
     if (query.length < 2) { setResults([]); return; }
-    const { data } = await supabase
+    const BASE = 'id, name, price, stock, barcode, category_id';
+    let res: any = await supabase
       .from('products')
-      .select('id, name, price, stock, barcode, category_id')
+      .select(`${BASE}, requires_prescription`)
       .or(`name.ilike.%${query}%,barcode.eq.${query}`)
       .eq('is_active', true)
       .limit(10);
-    setResults(data || []);
+    if (res.error && /requires_prescription/i.test(res.error.message)) {
+      res = await supabase
+        .from('products')
+        .select(BASE)
+        .or(`name.ilike.%${query}%,barcode.eq.${query}`)
+        .eq('is_active', true)
+        .limit(10);
+    }
+    setResults(res.data || []);
   }
 
   function addToCart(product: any) {
     setCart(prev => {
       const existing = prev.find(i => i.product_id === product.id);
       if (existing) return prev.map(i => i.product_id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
-      return [...prev, { product_id: product.id, name: product.name, price: product.price, quantity: 1 }];
+      return [...prev, {
+        product_id: product.id,
+        name: product.name,
+        price: product.price,
+        quantity: 1,
+        requires_prescription: !!product.requires_prescription,
+      }];
     });
     setSearch('');
     setResults([]);
@@ -220,22 +255,41 @@ export default function CashierPOS() {
   }
 
   const total = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  const cartRequiresPrescription = cart.some(i => i.requires_prescription);
 
   async function handleSale(paymentMethod: string) {
     if (cart.length === 0) { Alert.alert('Error', 'Agrega productos al carrito'); return; }
     if (!cashSession) { Alert.alert('Caja cerrada', 'Abre la caja antes de registrar una venta.'); return; }
-    if (buyerDni && verifiedBuyerDni !== buyerDni) {
-      Alert.alert('DNI sin consultar', 'Usa “Buscar DNI” para rellenar y verificar los datos del cliente antes de emitir la boleta.');
+
+    if (cartRequiresPrescription) {
+      // Venta con receta: DNI verificado + número de receta obligatorios.
+      if (!/^\d{8}$/.test(buyerDni) || verifiedBuyerDni !== buyerDni) {
+        Alert.alert('DNI requerido', 'Este producto requiere receta. Consulta y verifica el DNI del cliente antes de cobrar.');
+        return;
+      }
+      if (!buyerName.trim()) {
+        Alert.alert('Nombre requerido', 'Registra el nombre del cliente antes de cobrar.');
+        return;
+      }
+      if (prescriptionNumber.trim().length < 4) {
+        Alert.alert('Receta requerida', 'Ingresa el número de receta médica para emitir esta venta.');
+        return;
+      }
+    } else if (buyerDni) {
+      // Venta simple: no se admite DNI suelto.
+      Alert.alert('DNI no necesario', 'Esta venta no requiere receta: solo puedes registrar el nombre del cliente.');
       return;
     }
+
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('confirm-sale', {
         body: {
           items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
           payment_method: paymentMethod,
-          customer_dni: buyerDni || null,
+          customer_dni: cartRequiresPrescription ? buyerDni : null,
           customer_name: buyerName.trim() || null,
+          prescription_number: cartRequiresPrescription ? prescriptionNumber.trim() : null,
         },
       });
       if (error) throw error;
@@ -244,6 +298,7 @@ export default function CashierPOS() {
       setBuyerDni('');
       setBuyerName('');
       setVerifiedBuyerDni('');
+      setPrescriptionNumber('');
       router.push({ pathname: '/(cashier)/receipts', params: { saleId: data.sale_id } } as never);
     } catch (error: any) {
       Alert.alert('Error en Venta', error.message || 'No se pudo procesar la venta');
@@ -254,10 +309,6 @@ export default function CashierPOS() {
 
   return (
     <Animated.View style={[s.wrapper, { opacity: fadeAnim }]}>
-      {/* Background glow circles */}
-      <View style={s.circle1} />
-      <View style={s.circle2} />
-      <View style={s.circle3} />
 
       <Animated.View style={[s.container, { transform: [{ translateY: slideAnim }] }]}>
 
@@ -271,10 +322,19 @@ export default function CashierPOS() {
                   : 'Abre el turno para habilitar las ventas'}
               </Text>
             </View>
-            <Text style={s.sessionStatus}>{cashSession ? 'ACTIVA' : 'CERRADA'}</Text>
+            <View style={[s.sessionStatusBadge, cashSession ? s.sessionStatusOn : s.sessionStatusOff]}>
+              <Ionicons
+                name={cashSession ? 'lock-open-outline' : 'lock-closed-outline'}
+                size={11}
+                color={cashSession ? C.greenDark : C.textMid}
+              />
+              <Text style={[s.sessionStatus, cashSession ? s.sessionStatusTextOn : s.sessionStatusTextOff]}>
+                {cashSession ? 'ACTIVA' : 'CERRADA'}
+              </Text>
+            </View>
           </View>
           {sessionLoading ? (
-            <ActivityIndicator color="#fbbf24" />
+            <ActivityIndicator color={C.green} />
           ) : cashSession ? (
             <View style={s.sessionControls}>
               <TextInput
@@ -282,7 +342,7 @@ export default function CashierPOS() {
                 value={countedCash}
                 onChangeText={setCountedCash}
                 placeholder="Efectivo contado al cierre"
-                placeholderTextColor="#64748b"
+                placeholderTextColor={C.textLight}
                 keyboardType="decimal-pad"
               />
               <TouchableOpacity style={s.sessionButton} disabled={sessionBusy} onPress={closeCashSession}>
@@ -296,7 +356,7 @@ export default function CashierPOS() {
                 value={openingCash}
                 onChangeText={setOpeningCash}
                 placeholder="Fondo inicial en S/"
-                placeholderTextColor="#64748b"
+                placeholderTextColor={C.textLight}
                 keyboardType="decimal-pad"
               />
               <TouchableOpacity style={s.sessionButton} disabled={sessionBusy} onPress={openCashSession}>
@@ -308,20 +368,24 @@ export default function CashierPOS() {
 
         {/* Search Bar */}
         <View style={s.searchSection}>
-          <Text style={s.sectionLabel}>🔍 Buscar Producto</Text>
+          <Text style={s.sectionLabel}>Buscar producto</Text>
           <View style={s.searchContainer}>
-            <Text style={s.searchIcon}>🔎</Text>
+            <Ionicons name="search-outline" size={17} color={C.textLight} />
             <TextInput
               style={s.searchInput}
               value={search}
               onChangeText={searchProducts}
               placeholder="Nombre, código de barras..."
-              placeholderTextColor="#475569"
+              placeholderTextColor={C.textLight}
               returnKeyType="search"
             />
             {search.length > 0 && (
-              <TouchableOpacity onPress={() => { setSearch(''); setResults([]); }}>
-                <Text style={s.clearIcon}>✕</Text>
+              <TouchableOpacity
+                onPress={() => { setSearch(''); setResults([]); }}
+                accessibilityRole="button"
+                accessibilityLabel="Limpiar búsqueda"
+              >
+                <Ionicons name="close" size={16} color={C.textLight} />
               </TouchableOpacity>
             )}
           </View>
@@ -333,18 +397,26 @@ export default function CashierPOS() {
             {results.map((p, idx) => (
               <TouchableOpacity key={p.id} style={[s.resultItem, idx < results.length - 1 && s.resultBorder]} onPress={() => addToCart(p)}>
                 <View style={s.resultIconBox}>
-                  <Text style={s.resultEmoji}>💊</Text>
+                  <Ionicons name="medkit-outline" size={17} color={C.greenDark} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={s.resultName}>{p.name}</Text>
-                  <Text style={s.resultPrice}>S/ {Number(p.price).toFixed(2)}</Text>
+                  <View style={s.resultMetaRow}>
+                    <Text style={s.resultPrice}>S/ {Number(p.price).toFixed(2)}</Text>
+                    {p.requires_prescription && (
+                      <View style={s.rxChip}>
+                        <Ionicons name="document-text-outline" size={10} color={C.greenDark} />
+                        <Text style={s.rxChipText}>Receta</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
                 <View style={[s.stockBadge, p.stock < 10 && s.stockBadgeLow]}>
                   <Text style={[s.stockText, p.stock < 10 && s.stockTextLow]}>
-                    {p.stock < 10 ? '⚠️ ' : ''}{p.stock} ud.
+                    {p.stock} ud.
                   </Text>
                 </View>
-                <Text style={s.addIcon}>＋</Text>
+                <Ionicons name="add" size={18} color={C.green} />
               </TouchableOpacity>
             ))}
           </View>
@@ -368,31 +440,54 @@ export default function CashierPOS() {
             renderItem={({ item }) => (
               <View style={s.cartItem}>
                 <View style={s.cartIconBox}>
-                  <Text style={s.cartEmoji}>💊</Text>
+                  <Ionicons name="medkit-outline" size={17} color={C.textMid} />
                 </View>
                 <View style={s.cartItemLeft}>
                   <Text style={s.cartName} numberOfLines={1}>{item.name}</Text>
-                  <Text style={s.cartSub}>S/ {item.price.toFixed(2)} c/u</Text>
+                  <View style={s.cartMetaRow}>
+                    <Text style={s.cartSub}>S/ {item.price.toFixed(2)} c/u</Text>
+                    {item.requires_prescription && (
+                      <View style={s.rxChip}>
+                        <Ionicons name="document-text-outline" size={10} color={C.greenDark} />
+                        <Text style={s.rxChipText}>Receta</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
                 {/* Qty controls */}
                 <View style={s.qtyRow}>
-                  <TouchableOpacity style={s.qtyBtn} onPress={() => updateQty(item.product_id, -1)}>
-                    <Text style={s.qtyBtnText}>−</Text>
+                  <TouchableOpacity
+                    style={s.qtyBtn}
+                    onPress={() => updateQty(item.product_id, -1)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Reducir cantidad de ${item.name}`}
+                  >
+                    <Ionicons name="remove" size={15} color={C.textMid} />
                   </TouchableOpacity>
                   <Text style={s.qtyNum}>{item.quantity}</Text>
-                  <TouchableOpacity style={s.qtyBtn} onPress={() => updateQty(item.product_id, 1)}>
-                    <Text style={s.qtyBtnText}>＋</Text>
+                  <TouchableOpacity
+                    style={s.qtyBtn}
+                    onPress={() => updateQty(item.product_id, 1)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Aumentar cantidad de ${item.name}`}
+                  >
+                    <Ionicons name="add" size={15} color={C.textMid} />
                   </TouchableOpacity>
                 </View>
                 <Text style={s.cartTotal}>S/ {(item.price * item.quantity).toFixed(2)}</Text>
-                <TouchableOpacity onPress={() => removeFromCart(item.product_id)} style={s.removeBtn}>
-                  <Text style={s.removeBtnText}>✕</Text>
+                <TouchableOpacity
+                  onPress={() => removeFromCart(item.product_id)}
+                  style={s.removeBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Quitar ${item.name} del carrito`}
+                >
+                  <Ionicons name="trash-outline" size={16} color={C.textLight} />
                 </TouchableOpacity>
               </View>
             )}
             ListEmptyComponent={
               <View style={s.emptyContainer}>
-                <Text style={s.emptyIcon}>🛒</Text>
+                <Ionicons name="cart-outline" size={44} color={C.textLight} />
                 <Text style={s.emptyTitle}>Carrito vacío</Text>
                 <Text style={s.emptyText}>Busca un producto arriba para agregarlo</Text>
               </View>
@@ -400,36 +495,80 @@ export default function CashierPOS() {
           />
         </View>
 
-        <View style={s.buyerCard}>
-          <Text style={s.buyerTitle}>Datos para la boleta (opcional)</Text>
-          <View style={s.buyerRow}>
-            <TextInput
-              style={s.buyerInput}
-              value={buyerDni}
-              onChangeText={(value) => {
-                const dni = value.replace(/\D/g, '').slice(0, 8);
-                setBuyerDni(dni);
-                if (dni !== verifiedBuyerDni) {
-                  setBuyerName('');
-                  setVerifiedBuyerDni('');
-                }
-              }}
-              placeholder="DNI (8 dígitos)"
-              placeholderTextColor="#64748b"
-              keyboardType="number-pad"
-              maxLength={8}
+        <View style={[s.buyerCard, cartRequiresPrescription && s.buyerCardRx]}>
+          <View style={s.buyerCardHeader}>
+            <Ionicons
+              name={cartRequiresPrescription ? 'document-text-outline' : 'person-outline'}
+              size={15}
+              color={cartRequiresPrescription ? C.greenDark : C.textMid}
             />
-            <TouchableOpacity style={s.lookupButton} onPress={lookupBuyerDni} disabled={dniLoading}>
-              <Text style={s.lookupButtonText}>{dniLoading ? 'Buscando…' : 'Buscar DNI'}</Text>
-            </TouchableOpacity>
+            <Text style={s.buyerTitle}>
+              {cartRequiresPrescription ? 'Venta con receta médica' : 'Datos del cliente (opcional)'}
+            </Text>
           </View>
-          <TextInput
-            style={s.buyerNameInput}
-            value={buyerName}
-            onChangeText={setBuyerName}
-            placeholder="Nombre y apellidos del cliente"
-            placeholderTextColor="#64748b"
-          />
+
+          {cartRequiresPrescription ? (
+            <>
+              <Text style={s.buyerHint}>
+                Este carrito incluye medicamentos que requieren receta. El DNI y el número de receta son obligatorios.
+              </Text>
+              <View style={s.buyerRow}>
+                <TextInput
+                  style={s.buyerInput}
+                  value={buyerDni}
+                  onChangeText={(value) => {
+                    const dni = value.replace(/\D/g, '').slice(0, 8);
+                    setBuyerDni(dni);
+                    if (dni !== verifiedBuyerDni) {
+                      setBuyerName('');
+                      setVerifiedBuyerDni('');
+                    }
+                  }}
+                  placeholder="DNI (8 dígitos)"
+                  placeholderTextColor={C.textLight}
+                  keyboardType="number-pad"
+                  maxLength={8}
+                />
+                <TouchableOpacity style={s.lookupButton} onPress={lookupBuyerDni} disabled={dniLoading}>
+                  <Text style={s.lookupButtonText}>{dniLoading ? 'Buscando…' : 'Buscar DNI'}</Text>
+                </TouchableOpacity>
+              </View>
+              {verifiedBuyerDni === buyerDni && !!buyerName && (
+                <View style={s.verifiedRow}>
+                  <Ionicons name="checkmark-circle" size={13} color={C.greenDark} />
+                  <Text style={s.verifiedText}>DNI verificado: {buyerDni}</Text>
+                </View>
+              )}
+              <TextInput
+                style={s.buyerNameInput}
+                value={buyerName}
+                onChangeText={setBuyerName}
+                placeholder="Nombre y apellidos del cliente"
+                placeholderTextColor={C.textLight}
+              />
+              <TextInput
+                style={s.buyerNameInput}
+                value={prescriptionNumber}
+                onChangeText={setPrescriptionNumber}
+                placeholder="Número de receta médica (obligatorio)"
+                placeholderTextColor={C.textLight}
+                maxLength={60}
+              />
+            </>
+          ) : (
+            <>
+              <Text style={s.buyerHint}>
+                Venta de medicamento simple. Puedes registrar el nombre del cliente; el DNI y la receta no son necesarios.
+              </Text>
+              <TextInput
+                style={s.buyerNameInput}
+                value={buyerName}
+                onChangeText={setBuyerName}
+                placeholder="Nombre y apellidos del cliente (opcional)"
+                placeholderTextColor={C.textLight}
+              />
+            </>
+          )}
         </View>
 
         {/* Footer / Checkout */}
@@ -444,7 +583,7 @@ export default function CashierPOS() {
 
           {loading ? (
             <View style={s.loadingRow}>
-              <ActivityIndicator color="#f59e0b" size="small" />
+              <ActivityIndicator color={C.green} size="small" />
               <Text style={s.loadingText}>Procesando venta...</Text>
             </View>
           ) : (
@@ -454,18 +593,20 @@ export default function CashierPOS() {
                 onPress={() => handleSale('cash')}
                 disabled={loading || cart.length === 0 || !cashSession}
                 activeOpacity={0.8}
+                accessibilityRole="button"
               >
-                <Text style={s.payBtnIcon}>💵</Text>
-                <Text style={[s.payBtnText, { color: '#34d399' }]}>Efectivo</Text>
+                <Ionicons name="cash-outline" size={18} color={C.greenDark} />
+                <Text style={[s.payBtnText, { color: C.greenDark }]}>Efectivo</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[s.payBtn, s.payBtnCard]}
                 onPress={() => handleSale('card')}
                 disabled={loading || cart.length === 0 || !cashSession}
                 activeOpacity={0.8}
+                accessibilityRole="button"
               >
-                <Text style={s.payBtnIcon}>💳</Text>
-                <Text style={[s.payBtnText, { color: '#60a5fa' }]}>Tarjeta</Text>
+                <Ionicons name="card-outline" size={18} color={C.accent} />
+                <Text style={[s.payBtnText, { color: C.accent }]}>Tarjeta</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -476,245 +617,217 @@ export default function CashierPOS() {
 }
 
 const s = StyleSheet.create({
-  wrapper: { flex: 1, backgroundColor: '#050d17' },
+  wrapper: { flex: 1, backgroundColor: C.bgPage },
   sessionCard: {
-    backgroundColor: 'rgba(15,23,42,0.88)',
-    borderColor: 'rgba(245,158,11,0.26)',
+    backgroundColor: C.white,
+    borderColor: C.border,
     borderWidth: 1,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 10,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
   },
-  sessionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 9 },
-  sessionTitle: { color: '#f8fafc', fontSize: 14, fontWeight: '800' },
-  sessionSubtitle: { color: '#94a3b8', fontSize: 11, marginTop: 3 },
-  sessionStatus: { color: '#fbbf24', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  sessionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12 },
+  sessionTitle: { color: C.text, fontSize: 15, fontWeight: '700' },
+  sessionSubtitle: { color: C.textMid, fontSize: 12, marginTop: 3 },
+  sessionStatusBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 9, paddingVertical: 5, borderRadius: 6,
+    borderWidth: 1,
+  },
+  sessionStatusOn: { backgroundColor: C.greenLight, borderColor: '#BFDCD7' },
+  sessionStatusOff: { backgroundColor: C.bgSubtle, borderColor: C.border },
+  sessionStatus: { fontSize: 10, fontWeight: '700', letterSpacing: 1 },
+  sessionStatusTextOn: { color: C.greenDark },
+  sessionStatusTextOff: { color: C.textMid },
   sessionControls: { flexDirection: 'row', gap: 8 },
   sessionInput: {
     flex: 1,
-    color: '#f8fafc',
+    color: C.text,
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.25)',
-    borderRadius: 9,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 12,
+    borderColor: C.borderStrong,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    backgroundColor: C.white,
   },
-  sessionButton: { backgroundColor: '#b45309', borderRadius: 9, paddingHorizontal: 13, justifyContent: 'center' },
-  sessionButtonText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+  sessionButton: { backgroundColor: C.green, borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center' },
+  sessionButtonText: { color: C.white, fontWeight: '700', fontSize: 12 },
   buyerCard: {
-    backgroundColor: 'rgba(15,23,42,0.82)',
+    backgroundColor: C.white,
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.18)',
+    borderColor: C.border,
     borderRadius: 12,
-    padding: 10,
-    marginTop: 8,
-    marginBottom: 8,
+    padding: 14,
+    marginTop: 10,
+    marginBottom: 10,
   },
-  buyerTitle: { color: '#cbd5e1', fontSize: 11, fontWeight: '700', marginBottom: 7 },
+  buyerCardRx: { borderColor: C.green, backgroundColor: '#F4FBFA' },
+  buyerCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 4 },
+  buyerTitle: { color: C.textMid, fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
+  buyerHint: { color: C.textLight, fontSize: 11, lineHeight: 16, marginBottom: 4 },
   buyerRow: { flexDirection: 'row', gap: 7 },
   buyerInput: {
     flex: 1,
-    color: '#f8fafc',
+    color: C.text,
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.25)',
+    borderColor: C.borderStrong,
     borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
   },
-  lookupButton: { backgroundColor: '#1d4ed8', borderRadius: 8, justifyContent: 'center', paddingHorizontal: 12 },
-  lookupButtonText: { color: '#fff', fontWeight: '700', fontSize: 11 },
+  lookupButton: { backgroundColor: C.accent, borderRadius: 8, justifyContent: 'center', paddingHorizontal: 14 },
+  lookupButtonText: { color: C.white, fontWeight: '700', fontSize: 12 },
+  verifiedRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
+  verifiedText: { color: C.greenDark, fontSize: 11, fontWeight: '700' },
+  rxChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: C.greenLight, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5,
+    borderWidth: 1, borderColor: '#BFDCD7',
+  },
+  rxChipText: { color: C.greenDark, fontSize: 9, fontWeight: '700', letterSpacing: 0.3 },
+  resultMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 2 },
+  cartMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 3 },
   buyerNameInput: {
-    color: '#f8fafc',
+    color: C.text,
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.25)',
+    borderColor: C.borderStrong,
     borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 12,
-    marginTop: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    marginTop: 8,
   },
-  circle1: {
-    position: 'absolute',
-    width: 320,
-    height: 320,
-    borderRadius: 160,
-    backgroundColor: 'rgba(245,158,11,0.08)',
-    top: -80,
-    right: -80,
-  },
-  circle2: {
-    position: 'absolute',
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: 'rgba(59,130,246,0.08)',
-    bottom: 100,
-    left: -60,
-  },
-  circle3: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(16,185,129,0.06)',
-    top: '40%',
-    right: 20,
-  },
-  container: { flex: 1, paddingHorizontal: 20, paddingTop: 20 },
+  container: { flex: 1, paddingHorizontal: 20, paddingTop: 20, maxWidth: 980, width: '100%', alignSelf: 'center' },
 
   sectionLabel: {
-    fontSize: 12,
-    color: '#94a3b8',
-    fontWeight: '800',
+    fontSize: 11,
+    color: C.textMid,
+    fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 1.3,
     marginBottom: 8,
   },
   searchSection: { marginBottom: 12 },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15,23,42,0.82)',
+    gap: 10,
+    backgroundColor: C.white,
     borderWidth: 1,
-    borderColor: 'rgba(245,158,11,0.25)',
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    shadowColor: '#f59e0b',
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 8 },
+    borderColor: C.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
   },
-  searchIcon: { fontSize: 16, marginRight: 10 },
-  searchInput: { flex: 1, paddingVertical: 14, fontSize: 15, color: '#f8fafc' },
-  clearIcon: { color: '#94a3b8', fontSize: 16, padding: 4 },
+  searchInput: { flex: 1, paddingVertical: 14, fontSize: 15, color: C.text },
 
   resultsList: {
-    backgroundColor: 'rgba(15,23,42,0.96)',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(245,158,11,0.2)',
-    marginBottom: 16,
-    maxHeight: 220,
-    zIndex: 100,
-    shadowColor: '#f59e0b',
-    shadowOpacity: 0.14,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  resultItem: { padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  resultBorder: { borderBottomWidth: 1, borderBottomColor: 'rgba(148,163,184,0.08)' },
-  resultIconBox: {
-    width: 36,
-    height: 36,
+    backgroundColor: C.white,
     borderRadius: 10,
-    backgroundColor: 'rgba(245,158,11,0.1)',
+    borderWidth: 1,
+    borderColor: C.border,
+    marginBottom: 16,
+    maxHeight: 240,
+    overflow: 'hidden',
+  },
+  resultItem: { padding: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  resultBorder: { borderBottomWidth: 1, borderBottomColor: C.border },
+  resultIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: C.greenLight,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  resultEmoji: { fontSize: 16 },
-  resultName: { fontWeight: '700', color: '#f8fafc', fontSize: 14 },
-  resultPrice: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
-  stockBadge: { backgroundColor: 'rgba(59,130,246,0.15)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  stockBadgeLow: { backgroundColor: 'rgba(239,68,68,0.15)' },
-  stockText: { color: '#60a5fa', fontSize: 11, fontWeight: '800' },
-  stockTextLow: { color: '#f87171' },
-  addIcon: { color: '#fbbf24', fontSize: 20, fontWeight: '800', paddingLeft: 4 },
+  resultName: { fontWeight: '700', color: C.text, fontSize: 14 },
+  resultPrice: { color: C.textMid, fontSize: 12, marginTop: 2 },
+  stockBadge: { backgroundColor: C.accentLight, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 6 },
+  stockBadgeLow: { backgroundColor: '#FEF3C7' },
+  stockText: { color: C.accent, fontSize: 11, fontWeight: '700' },
+  stockTextLow: { color: '#92400E' },
 
   cartHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sectionTitle: { fontSize: 17, fontWeight: '900', color: '#f8fafc', letterSpacing: 0.3 },
+  sectionTitle: { fontSize: 17, fontWeight: '700', color: C.text, letterSpacing: -0.2 },
   cartBadge: {
-    backgroundColor: '#f59e0b',
-    width: 26,
+    backgroundColor: C.green,
+    minWidth: 26,
     height: 26,
     borderRadius: 13,
+    paddingHorizontal: 8,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#f59e0b',
-    shadowOpacity: 0.45,
-    shadowRadius: 8,
   },
-  cartBadgeText: { color: '#111827', fontSize: 12, fontWeight: '900' },
+  cartBadgeText: { color: C.white, fontSize: 12, fontWeight: '700' },
 
   cartContainer: { flex: 1 },
   cartItem: {
-    backgroundColor: 'rgba(15,23,42,0.82)',
-    padding: 12,
-    borderRadius: 16,
+    backgroundColor: C.white,
+    padding: 13,
+    borderRadius: 10,
     marginBottom: 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.08)',
-    shadowColor: '#020617',
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 8 },
+    borderColor: C.border,
   },
   cartIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: 'rgba(245,158,11,0.08)',
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: C.bgSubtle,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  cartEmoji: { fontSize: 18 },
   cartItemLeft: { flex: 1 },
-  cartName: { fontWeight: '800', color: '#f8fafc', fontSize: 14 },
-  cartSub: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
+  cartName: { fontWeight: '700', color: C.text, fontSize: 14 },
+  cartSub: { color: C.textMid, fontSize: 12, marginTop: 2 },
   qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   qtyBtn: {
     width: 28,
     height: 28,
-    borderRadius: 8,
-    backgroundColor: 'rgba(245,158,11,0.12)',
+    borderRadius: 6,
+    backgroundColor: C.bgSubtle,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(245,158,11,0.25)',
+    borderColor: C.border,
   },
-  qtyBtnText: { color: '#fbbf24', fontWeight: '900', fontSize: 14 },
-  qtyNum: { color: '#f8fafc', fontWeight: '800', fontSize: 15, minWidth: 20, textAlign: 'center' },
-  cartTotal: { fontWeight: '900', color: '#fbbf24', fontSize: 14, minWidth: 60, textAlign: 'right' },
+  qtyNum: { color: C.text, fontWeight: '700', fontSize: 15, minWidth: 22, textAlign: 'center' },
+  cartTotal: { fontWeight: '700', color: C.text, fontSize: 14, minWidth: 64, textAlign: 'right' },
   removeBtn: {
     width: 30,
     height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(239,68,68,0.1)',
+    borderRadius: 8,
+    backgroundColor: C.white,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.2)',
+    borderColor: C.border,
   },
-  removeBtnText: { color: '#f87171', fontWeight: '800', fontSize: 12 },
 
-  emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 48 },
-  emptyIcon: { fontSize: 52, marginBottom: 12, opacity: 0.4 },
-  emptyTitle: { fontSize: 16, fontWeight: '800', color: '#94a3b8', marginBottom: 6 },
-  emptyText: { fontSize: 13, color: '#64748b', textAlign: 'center' },
+  emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 48, gap: 10 },
+  emptyTitle: { fontSize: 15, fontWeight: '700', color: C.textMid },
+  emptyText: { fontSize: 13, color: C.textLight, textAlign: 'center' },
 
   footer: {
-    backgroundColor: 'rgba(15,23,42,0.9)',
+    backgroundColor: C.white,
     padding: 20,
-    borderRadius: 22,
+    borderRadius: 12,
     marginTop: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(245,158,11,0.15)',
-    shadowColor: '#f59e0b',
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
+    borderColor: C.border,
   },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  totalLabel: { fontSize: 11, color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
-  totalItems: { fontSize: 12, color: '#64748b', marginTop: 2 },
-  totalAmount: { fontSize: 32, fontWeight: '900', color: '#f8fafc', letterSpacing: -0.5 },
+  totalLabel: { fontSize: 11, color: C.textMid, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.2 },
+  totalItems: { fontSize: 12, color: C.textLight, marginTop: 2 },
+  totalAmount: { fontSize: 30, fontWeight: '700', color: C.text, letterSpacing: -0.6 },
 
   loadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 16 },
-  loadingText: { color: '#fbbf24', fontWeight: '700', fontSize: 14 },
+  loadingText: { color: C.textMid, fontWeight: '600', fontSize: 14 },
 
   payBtns: { flexDirection: 'row', gap: 12 },
   payBtn: {
@@ -723,12 +836,11 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
-    borderRadius: 16,
+    borderRadius: 10,
     borderWidth: 1,
     gap: 8,
   },
-  payBtnCash: { backgroundColor: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.35)' },
-  payBtnCard: { backgroundColor: 'rgba(59,130,246,0.12)', borderColor: 'rgba(59,130,246,0.35)' },
-  payBtnIcon: { fontSize: 20 },
-  payBtnText: { fontWeight: '800', fontSize: 15, letterSpacing: 0.3 },
+  payBtnCash: { backgroundColor: C.greenLight, borderColor: C.green },
+  payBtnCard: { backgroundColor: C.accentLight, borderColor: C.accent },
+  payBtnText: { fontWeight: '700', fontSize: 15, letterSpacing: 0.2 },
 });

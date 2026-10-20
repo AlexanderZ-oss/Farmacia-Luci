@@ -11,6 +11,8 @@ import {
   View,
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
+import { Ionicons } from '@expo/vector-icons';
+import { C } from '../../lib/theme';
 
 interface SaleRow {
   id: string;
@@ -266,12 +268,19 @@ export default function ReportsScreen() {
     <ScrollView style={s.container} contentContainerStyle={s.content}>
       <View style={s.heading}>
         <View style={{ flex: 1 }}>
+          <Text style={s.eyebrow}>REPORTES</Text>
           <Text style={s.title}>Informes y actividad</Text>
           <Text style={s.subtitle}>Cifras calculadas a partir de ventas y turnos registrados.</Text>
         </View>
         <View style={s.exportActions}>
-          <TouchableOpacity style={s.exportButton} onPress={exportCsv}><Text style={s.exportText}>CSV / Excel</Text></TouchableOpacity>
-          <TouchableOpacity style={s.pdfButton} onPress={exportPdf}><Text style={s.pdfText}>Imprimir / PDF</Text></TouchableOpacity>
+          <TouchableOpacity style={s.exportButton} onPress={exportCsv} accessibilityRole="button">
+            <Ionicons name="download-outline" size={15} color={C.textMid} />
+            <Text style={s.exportText}>CSV / Excel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.pdfButton} onPress={exportPdf} accessibilityRole="button">
+            <Ionicons name="print-outline" size={15} color={C.white} />
+            <Text style={s.pdfText}>Imprimir / PDF</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -281,10 +290,13 @@ export default function ReportsScreen() {
             <Text style={[s.periodText, period === days && s.periodTextSelected]}>{days === 1 ? 'Hoy' : `${days} días`}</Text>
           </TouchableOpacity>
         ))}
-        <TouchableOpacity style={s.refreshButton} onPress={() => loadReport(period)}><Text style={s.periodText}>Actualizar</Text></TouchableOpacity>
+        <TouchableOpacity style={s.refreshButton} onPress={() => loadReport(period)} accessibilityRole="button">
+          <Ionicons name="refresh-outline" size={14} color={C.textMid} />
+          <Text style={s.refreshText}>Actualizar</Text>
+        </TouchableOpacity>
       </View>
 
-      {loading ? <ActivityIndicator color="#2563eb" style={{ marginTop: 30 }} /> : errorMessage ? (
+      {loading ? <ActivityIndicator color={C.green} style={{ marginTop: 30 }} /> : errorMessage ? (
         <View style={s.errorCard}>
           <Text style={s.errorTitle}>No se pudo cargar el informe</Text>
           <Text style={s.errorText}>{errorMessage}</Text>
@@ -355,41 +367,54 @@ export default function ReportsScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f3f4f6' },
-  content: { padding: 18, paddingBottom: 40, gap: 14 },
-  heading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
-  title: { color: '#111827', fontSize: 24, fontWeight: '900' },
-  subtitle: { color: '#6b7280', fontSize: 13, marginTop: 4 },
-  exportActions: { flexDirection: 'row', gap: 8 },
-  exportButton: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#d1d5db', paddingHorizontal: 12, paddingVertical: 9, borderRadius: 9 },
-  exportText: { color: '#374151', fontSize: 11, fontWeight: '800' },
-  pdfButton: { backgroundColor: '#1d4ed8', paddingHorizontal: 12, paddingVertical: 9, borderRadius: 9 },
-  pdfText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  container: { flex: 1, backgroundColor: C.bgPage },
+  content: { padding: 22, paddingBottom: 44, gap: 16, maxWidth: 1180, width: '100%', alignSelf: 'center' },
+  heading: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
+  eyebrow: { color: C.green, fontSize: 11, fontWeight: '700', letterSpacing: 1.6, marginBottom: 6 },
+  title: { color: C.text, fontSize: 23, fontWeight: '700', letterSpacing: -0.4 },
+  subtitle: { color: C.textMid, fontSize: 13, marginTop: 6 },
+  exportActions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  exportButton: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    backgroundColor: C.white, borderWidth: 1, borderColor: C.border,
+    paddingHorizontal: 13, paddingVertical: 10, borderRadius: 8,
+  },
+  exportText: { color: C.textMid, fontSize: 12, fontWeight: '700' },
+  pdfButton: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    backgroundColor: C.green, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8,
+  },
+  pdfText: { color: C.white, fontSize: 12, fontWeight: '700' },
   periods: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  periodButton: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
-  periodSelected: { backgroundColor: '#dbeafe', borderColor: '#60a5fa' },
-  periodText: { color: '#4b5563', fontSize: 12, fontWeight: '700' },
-  periodTextSelected: { color: '#1d4ed8' },
-  refreshButton: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#e5e7eb' },
-  metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  metricCard: { flexGrow: 1, flexBasis: 170, backgroundColor: '#fff', padding: 16, borderRadius: 13, borderWidth: 1, borderColor: '#e5e7eb' },
-  metricLabel: { color: '#6b7280', fontSize: 12, fontWeight: '600' },
-  metricValue: { color: '#111827', fontSize: 21, fontWeight: '900', marginTop: 7 },
-  sectionCard: { backgroundColor: '#fff', borderRadius: 13, borderWidth: 1, borderColor: '#e5e7eb', padding: 16 },
-  sectionTitle: { color: '#111827', fontSize: 16, fontWeight: '800', marginBottom: 8 },
-  saleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, borderTopWidth: 1, borderTopColor: '#f3f4f6' },
-  saleId: { color: '#1f2937', fontSize: 12, fontWeight: '800' },
-  saleMeta: { color: '#6b7280', fontSize: 10, marginTop: 4 },
-  saleAmount: { color: '#111827', fontSize: 12, fontWeight: '800' },
-  saleStatus: { fontSize: 10, fontWeight: '700', marginTop: 3 },
-  completed: { color: '#047857' },
-  cancelled: { color: '#b91c1c' },
-  productRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#f3f4f6' },
-  productRank: { color: '#2563eb', fontWeight: '900', width: 18 },
-  productName: { flex: 1, color: '#374151', fontSize: 12, fontWeight: '600' },
-  productQuantity: { color: '#6b7280', fontSize: 11 },
-  empty: { color: '#9ca3af', textAlign: 'center', paddingVertical: 14, fontSize: 12 },
-  errorCard: { backgroundColor: '#fff1f2', borderWidth: 1, borderColor: '#fecdd3', borderRadius: 12, padding: 16 },
-  errorTitle: { color: '#9f1239', fontWeight: '800' },
-  errorText: { color: '#881337', fontSize: 12, marginTop: 5 },
+  periodButton: { backgroundColor: C.white, borderWidth: 1, borderColor: C.border, borderRadius: 8, paddingHorizontal: 15, paddingVertical: 9 },
+  periodSelected: { backgroundColor: C.greenLight, borderColor: C.green },
+  periodText: { color: C.textMid, fontSize: 12, fontWeight: '600' },
+  periodTextSelected: { color: C.greenDark, fontWeight: '700' },
+  refreshButton: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    paddingHorizontal: 15, paddingVertical: 9, borderRadius: 8,
+    backgroundColor: C.bgSubtle, borderWidth: 1, borderColor: C.border,
+  },
+  refreshText: { color: C.textMid, fontSize: 12, fontWeight: '600' },
+  metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  metricCard: { flexGrow: 1, flexBasis: 180, backgroundColor: C.white, padding: 17, borderRadius: 12, borderWidth: 1, borderColor: C.border },
+  metricLabel: { color: C.textMid, fontSize: 11, fontWeight: '700', letterSpacing: 0.6 },
+  metricValue: { color: C.text, fontSize: 21, fontWeight: '700', marginTop: 8, letterSpacing: -0.4 },
+  sectionCard: { backgroundColor: C.white, borderRadius: 12, borderWidth: 1, borderColor: C.border, padding: 18 },
+  sectionTitle: { color: C.text, fontSize: 16, fontWeight: '700', marginBottom: 10 },
+  saleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderTopWidth: 1, borderTopColor: C.border },
+  saleId: { color: C.text, fontSize: 12, fontWeight: '700' },
+  saleMeta: { color: C.textMid, fontSize: 11, marginTop: 4 },
+  saleAmount: { color: C.text, fontSize: 13, fontWeight: '700' },
+  saleStatus: { fontSize: 11, fontWeight: '700', marginTop: 3 },
+  completed: { color: C.greenDark },
+  cancelled: { color: C.red },
+  productRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9, borderTopWidth: 1, borderTopColor: C.border },
+  productRank: { color: C.green, fontWeight: '700', width: 18, fontSize: 12 },
+  productName: { flex: 1, color: C.textMid, fontSize: 12, fontWeight: '600' },
+  productQuantity: { color: C.textLight, fontSize: 11 },
+  empty: { color: C.textMid, textAlign: 'center', paddingVertical: 16, fontSize: 12 },
+  errorCard: { backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', borderRadius: 12, padding: 18 },
+  errorTitle: { color: '#B91C1C', fontWeight: '700' },
+  errorText: { color: '#B91C1C', fontSize: 12, marginTop: 6 },
 });

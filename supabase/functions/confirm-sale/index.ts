@@ -28,21 +28,47 @@ serve(async (req) => {
       age_verification_id,
       customer_dni,
       customer_name,
+      prescription_number,
     } = await req.json();
     if (!items || items.length === 0) throw new Error('No hay ítems en la venta');
-    const hasCustomerDni = typeof customer_dni === 'string' && customer_dni.length > 0;
-    const hasCustomerName = typeof customer_name === 'string' && customer_name.trim().length > 0;
-    if (hasCustomerDni !== hasCustomerName || (hasCustomerDni && (
-      !/^\d{8}$/.test(customer_dni)
-      || customer_name.trim().length < 3
-    ))) {
-      throw new Error('Consulta el DNI y verifica el nombre antes de emitir la boleta');
-    }
 
     const serviceClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
+
+    // ¿El carrito incluye algún producto que requiere receta?
+    const productIds = Array.from(new Set(items.map((item: any) => item.product_id)));
+    const { data: rxProducts, error: rxError } = await serviceClient
+      .from('products')
+      .select('id, requires_prescription')
+      .in('id', productIds);
+    if (rxError) throw new Error('No se pudieron validar los productos de la venta');
+    const requiresPrescription = (rxProducts ?? []).some((p: any) => p.requires_prescription === true);
+
+    const hasCustomerDni = typeof customer_dni === 'string' && customer_dni.length > 0;
+    const hasCustomerName = typeof customer_name === 'string' && customer_name.trim().length > 0;
+    const hasPrescription = typeof prescription_number === 'string' && prescription_number.trim().length > 0;
+
+    if (requiresPrescription) {
+      // Venta con receta: DNI verificado + nombre + número de receta.
+      if (!hasCustomerDni || !hasCustomerName) {
+        throw new Error('Este producto requiere receta: registra el DNI y el nombre del cliente');
+      }
+      if (!/^\d{8}$/.test(customer_dni) || customer_name.trim().length < 3) {
+        throw new Error('Consulta el DNI y verifica el nombre antes de emitir la boleta');
+      }
+      if (!hasPrescription || prescription_number.trim().length < 4) {
+        throw new Error('Ingresa el número de receta médica para esta venta');
+      }
+    } else {
+      // Venta simple: solo nombre opcional, sin DNI ni receta.
+      if (hasCustomerDni) throw new Error('La venta sin receta no requiere DNI, solo el nombre del cliente');
+      if (hasPrescription) throw new Error('La venta no contiene productos que requieran receta');
+      if (hasCustomerName && customer_name.trim().length < 3) {
+        throw new Error('El nombre del cliente es demasiado corto');
+      }
+    }
 
     let totalAmount = 0;
     const saleItems: any[] = [];
@@ -64,8 +90,9 @@ serve(async (req) => {
       p_age_verification_id: age_verification_id || null,
       p_items: {
         items: saleItems,
-        customer_dni: customer_dni || null,
-        customer_name: customer_name?.trim() || null,
+        customer_dni: hasCustomerDni ? customer_dni : null,
+        customer_name: hasCustomerName ? customer_name.trim() : null,
+        prescription_number: hasPrescription ? prescription_number.trim() : null,
       },
     });
     if (rpcError) throw rpcError;

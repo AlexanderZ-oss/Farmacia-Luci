@@ -1,24 +1,34 @@
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, TextInput, Platform, Image } from 'react-native';
+import {
+  View, Text, FlatList, TouchableOpacity, ActivityIndicator,
+  StyleSheet, TextInput, Platform, Image,
+} from 'react-native';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRouter } from 'expo-router';
 import { useCartStore, Product } from '../../stores/cartStore';
+import { Ionicons } from '@expo/vector-icons';
+import { C, IconName } from '../../lib/theme';
 
-const CATEGORY_FILTERS = ['Todos', 'Medicamentos', 'Cosméticos', 'Suplementos', '1ros Auxilios', 'Bebés y Mamás', 'Higiene'];
+const CATEGORY_FILTERS = [
+  'Todos', 'Medicamentos', 'Cosméticos', 'Suplementos',
+  '1ros Auxilios', 'Bebés y Mamás', 'Higiene',
+];
 
-const EMOJI_MAP: Record<string, string> = {
-  'Medicamentos': '💊', 'Cosméticos': '✨', 'Suplementos': '💪',
-  '1ros Auxilios': '🩹', 'Bebés y Mamás': '👶', 'Higiene': '🧴',
+const ICON_MAP: Record<string, IconName> = {
+  Medicamentos: 'medkit-outline', Cosméticos: 'sparkles-outline',
+  Suplementos: 'nutrition-outline', '1ros Auxilios': 'bandage-outline',
+  'Bebés y Mamás': 'balloon-outline', Higiene: 'water-outline',
 };
 
 export default function CatalogScreen() {
   const [products, setProducts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [loading, setLoading]   = useState(true);
+  const [search, setSearch]     = useState('');
   const [activeFilter, setActiveFilter] = useState('Todos');
-  const router = useRouter();
-  const addItem = useCartStore((s) => s.addItem);
+  const router   = useRouter();
+  const addItem  = useCartStore((s) => s.addItem);
   const cartItems = useCartStore((s) => s.items);
+  const cartCount = cartItems.reduce((acc, i) => acc + i.quantity, 0);
 
   useEffect(() => { fetchProducts(); }, []);
 
@@ -38,51 +48,72 @@ export default function CatalogScreen() {
     }
   }
 
-  const filtered = products.filter(p => {
+  const filtered = products.filter((p) => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
-    const catName = p.categories?.name === 'Primeros Auxilios' ? '1ros Auxilios' : (p.categories?.name || 'Medicamentos');
+    const catName = p.categories?.name === 'Primeros Auxilios'
+      ? '1ros Auxilios'
+      : (p.categories?.name || 'Medicamentos');
     const matchCat = activeFilter === 'Todos' || catName === activeFilter;
     return matchSearch && matchCat;
   });
 
-  const cartItemCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
-
   const renderProduct = ({ item }: { item: any }) => {
-    const catName = item.categories?.name === 'Primeros Auxilios' ? '1ros Auxilios' : (item.categories?.name || 'Medicamentos');
-    const emoji = EMOJI_MAP[catName] || '💊';
+    const catName = item.categories?.name === 'Primeros Auxilios'
+      ? '1ros Auxilios'
+      : (item.categories?.name || 'Medicamentos');
+    const icon = ICON_MAP[catName] || 'medkit-outline';
     const gallery = [...(item.product_images || [])].sort((a, b) => a.sort_order - b.sort_order);
     const primaryImage = gallery[0]?.image_url || item.image_url;
 
     return (
-      <TouchableOpacity style={s.card} onPress={() => router.push(`/(store)/product/${item.id}`)} activeOpacity={0.85}>
+      <TouchableOpacity
+        style={s.card}
+        onPress={() => router.push(`/(store)/product/${item.id}`)}
+        activeOpacity={0.88}
+        accessibilityRole="button"
+        accessibilityLabel={`Ver detalle de ${item.name}`}
+      >
+        {/* Image */}
         <View style={s.cardImgBox}>
           {primaryImage
             ? <Image source={{ uri: primaryImage }} style={s.productImage} resizeMode="cover" />
-            : <Text style={s.cardEmoji}>{emoji}</Text>}
+            : <Ionicons name={icon} size={40} color={C.greenMid} />
+          }
           {gallery.length > 1 && (
-            <View style={s.imageCount}><Text style={s.imageCountText}>{gallery.length} fotos</Text></View>
+            <View style={s.imageCount}>
+              <Text style={s.imageCountText}>{gallery.length} fotos</Text>
+            </View>
           )}
           {item.requires_age_verification && (
-            <View style={s.ageBadge}><Text style={s.ageBadgeText}>+18</Text></View>
+            <View style={s.ageBadge}>
+              <Text style={s.ageBadgeText}>+18</Text>
+            </View>
           )}
           {item.stock < 10 && (
-            <View style={s.lowStockBadge}><Text style={s.lowStockText}>Últimas u.</Text></View>
+            <View style={s.lowStockBadge}>
+              <Text style={s.lowStockText}>Últimas u.</Text>
+            </View>
           )}
         </View>
+
+        {/* Body */}
         <View style={s.cardBody}>
           <Text style={s.cardCat}>{catName}</Text>
           <Text style={s.cardName} numberOfLines={2}>{item.name}</Text>
           <View style={s.cardFooter}>
             <Text style={s.cardPrice}>S/ {Number(item.price).toFixed(2)}</Text>
-            <TouchableOpacity
+            <View
               style={s.addBtn}
-              onPress={(e) => {
+              onStartShouldSetResponder={() => true}
+              onResponderRelease={(e) => {
                 e.stopPropagation?.();
                 addItem(item as Product, 1);
               }}
+              accessibilityRole="button"
+              accessibilityLabel={`Agregar ${item.name} al carrito`}
             >
-              <Text style={s.addBtnText}>+</Text>
-            </TouchableOpacity>
+              <Ionicons name="add" size={20} color={C.white} />
+            </View>
           </View>
         </View>
       </TouchableOpacity>
@@ -91,258 +122,330 @@ export default function CatalogScreen() {
 
   return (
     <View style={s.wrapper}>
-      <View style={s.gradientBg}>
-        <View style={s.circle1} />
-        <View style={s.circle2} />
-      </View>
-      <View style={s.container}>
-        {/* Header & Search Bar */}
-        <View style={s.header}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-            <Text style={s.backBtnText}>←</Text>
+      {/* ── Sub-header ────────────────────────────────────── */}
+      <View style={s.subHeader}>
+        {/* Back + Search + Cart */}
+        <View style={s.searchRow}>
+          <TouchableOpacity
+            style={s.backBtn}
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Volver"
+          >
+            <Ionicons name="arrow-back" size={18} color={C.text} />
           </TouchableOpacity>
+
           <View style={s.searchBox}>
-            <Text style={s.searchIcon}>🔍</Text>
+            <Ionicons name="search-outline" size={16} color={C.textLight} />
             <TextInput
               style={s.searchInput}
               value={search}
               onChangeText={setSearch}
               placeholder="Buscar medicamentos..."
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={C.textLight}
+              accessibilityLabel="Buscar productos"
+              returnKeyType="search"
             />
+            {search.length > 0 && (
+              <TouchableOpacity onPress={() => setSearch('')} accessibilityLabel="Limpiar búsqueda">
+                <Ionicons name="close" size={16} color={C.textLight} style={{ paddingHorizontal: 4 }} />
+              </TouchableOpacity>
+            )}
           </View>
-          <TouchableOpacity style={s.cartBtn} onPress={() => router.push('/(store)/cart')}>
-            <Text style={s.cartBtnText}>🛒</Text>
-            {cartItemCount > 0 && (
+
+          <TouchableOpacity
+            style={s.cartBtn}
+            onPress={() => router.push('/(store)/cart')}
+            accessibilityRole="button"
+            accessibilityLabel={`Carrito, ${cartCount} productos`}
+          >
+            <Ionicons name="cart-outline" size={20} color={C.text} />
+            {cartCount > 0 && (
               <View style={s.cartBadge}>
-                <Text style={s.cartBadgeText}>{cartItemCount}</Text>
+                <Text style={s.cartBadgeText}>{cartCount > 9 ? '9+' : cartCount}</Text>
               </View>
             )}
           </TouchableOpacity>
         </View>
 
-        {/* Filters */}
-        <View style={s.filtersRow}>
-          <FlatList
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            data={CATEGORY_FILTERS}
-            keyExtractor={(item) => item}
-            contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[s.filterChip, activeFilter === item && s.filterChipActive]}
-                onPress={() => setActiveFilter(item)}
-              >
-                <Text style={[s.filterText, activeFilter === item && s.filterTextActive]}>{item}</Text>
-              </TouchableOpacity>
-            )}
-          />
-        </View>
-
-        {/* Results count */}
-        <View style={s.resultsBar}>
-          <Text style={s.resultsText}>{filtered.length} productos encontrados</Text>
-        </View>
-
-        {loading ? (
-          <ActivityIndicator size="large" color="#60a5fa" style={{ marginTop: 60 }} />
-        ) : (
-          <FlatList
-            data={filtered}
-            keyExtractor={(item) => item.id}
-            renderItem={renderProduct}
-            numColumns={2}
-            columnWrapperStyle={s.row}
-            contentContainerStyle={s.list}
-            ListEmptyComponent={
-              <View style={s.emptyBox}>
-                <Text style={s.emptyIcon}>🔍</Text>
-                <Text style={s.emptyText}>No se encontraron productos</Text>
-              </View>
-            }
-          />
-        )}
+        {/* Category chips */}
+        <FlatList
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          data={CATEGORY_FILTERS}
+          keyExtractor={(item) => item}
+          contentContainerStyle={s.filtersRow}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={[s.chip, activeFilter === item && s.chipActive]}
+              onPress={() => setActiveFilter(item)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: activeFilter === item }}
+              accessibilityLabel={`Filtrar por ${item}`}
+            >
+              <Text style={[s.chipText, activeFilter === item && s.chipTextActive]}>
+                {item}
+              </Text>
+            </TouchableOpacity>
+          )}
+        />
       </View>
+
+      {/* Results count */}
+      <View style={s.resultsBar}>
+        <Text style={s.resultsText}>
+          {loading ? 'Cargando...' : `${filtered.length} productos`}
+        </Text>
+      </View>
+
+      {/* Product grid */}
+      {loading ? (
+        <View style={s.loadingBox}>
+          <ActivityIndicator size="large" color={C.green} />
+          <Text style={s.loadingText}>Cargando productos...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={(item) => item.id}
+          renderItem={renderProduct}
+          numColumns={2}
+          columnWrapperStyle={s.row}
+          contentContainerStyle={s.list}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={s.emptyBox}>
+              <Ionicons name="search-outline" size={44} color={C.textLight} style={{ marginBottom: 14 }} />
+              <Text style={s.emptyTitle}>Sin resultados</Text>
+              <Text style={s.emptyText}>
+                No encontramos productos para "{search || activeFilter}".
+              </Text>
+              <TouchableOpacity
+                style={s.emptyBtn}
+                onPress={() => { setSearch(''); setActiveFilter('Todos'); }}
+              >
+                <Text style={s.emptyBtnText}>Ver todos los productos</Text>
+              </TouchableOpacity>
+            </View>
+          }
+        />
+      )}
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  wrapper: { flex: 1, backgroundColor: '#050d17' },
-  gradientBg: { ...StyleSheet.absoluteFillObject },
-  circle1: {
-    position: 'absolute',
-    width: 320,
-    height: 320,
-    borderRadius: 160,
-    backgroundColor: 'rgba(59,130,246,0.12)',
-    top: -100,
-    right: -50,
-  },
-  circle2: {
-    position: 'absolute',
-    width: 270,
-    height: 270,
-    borderRadius: 135,
-    backgroundColor: 'rgba(168,85,247,0.08)',
-    bottom: 100,
-    left: -50,
-  },
-  container: { flex: 1, paddingTop: Platform.OS === 'ios' ? 60 : 40 },
+  wrapper: { flex: 1, backgroundColor: C.bgPage },
 
-  header: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    gap: 12,
-    alignItems: 'center',
+  // ── Sub-header
+  subHeader: {
+    backgroundColor: C.white,
+    paddingTop: Platform.OS === 'ios' ? 0 : 8,
+    paddingBottom: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 10,
+  },
+
   backBtn: {
     width: 44,
     height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(15,23,42,0.82)',
+    borderRadius: 8,
+    backgroundColor: C.white,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.12)',
+    borderColor: C.borderStrong,
   },
-  backBtnText: { color: '#f8fafc', fontSize: 18, fontWeight: '800' },
+
   searchBox: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15,23,42,0.82)',
-    borderRadius: 18,
-    paddingHorizontal: 16,
+    gap: 8,
+    backgroundColor: C.bgPage,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    height: 44,
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.12)',
-    shadowColor: '#020617',
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
+    borderColor: C.border,
   },
-  searchIcon: { fontSize: 16, marginRight: 10 },
-  searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: '#f8fafc' },
+  searchInput: { flex: 1, fontSize: 14.5, color: C.text, height: 44 },
+
   cartBtn: {
     width: 44,
     height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(15,23,42,0.82)',
+    borderRadius: 8,
+    backgroundColor: C.white,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.12)',
+    borderColor: C.borderStrong,
     position: 'relative',
   },
-  cartBtnText: { fontSize: 20 },
   cartBadge: {
     position: 'absolute',
     top: -4,
     right: -4,
-    backgroundColor: '#ef4444',
+    backgroundColor: C.accent,
     minWidth: 20,
     height: 20,
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: C.white,
   },
-  cartBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900' },
+  cartBadgeText: { color: C.white, fontSize: 10, fontWeight: '900' },
 
-  filtersRow: { marginBottom: 8, height: 40 },
-  filterChip: {
-    paddingHorizontal: 18,
+  filtersRow: {
+    paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: 'rgba(15,23,42,0.82)',
+    gap: 8,
+  },
+  chip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: C.bgPage,
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.12)',
+    borderColor: C.border,
+    minHeight: 36,
     justifyContent: 'center',
   },
-  filterChipActive: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
-  filterText: { fontSize: 13, color: '#94a3b8', fontWeight: '700' },
-  filterTextActive: { color: '#fff', fontWeight: '800' },
+  chipActive:     { backgroundColor: C.green, borderColor: C.green },
+  chipText:       { fontSize: 13, color: C.textMid, fontWeight: '600' },
+  chipTextActive: { color: C.white, fontWeight: '800' },
 
-  resultsBar: { paddingHorizontal: 20, paddingVertical: 14, marginBottom: 8 },
-  resultsText: { color: '#dbeafe', fontSize: 13, fontWeight: '800', letterSpacing: 0.3 },
+  // ── Results bar
+  resultsBar: { paddingHorizontal: 18, paddingVertical: 10 },
+  resultsText: { color: C.textMid, fontSize: 13, fontWeight: '700' },
 
-  row: { justifyContent: 'space-between', paddingHorizontal: 20 },
-  list: { paddingBottom: 40 },
+  // ── Loading
+  loadingBox: { alignItems: 'center', paddingTop: 60 },
+  loadingText: { color: C.textLight, marginTop: 14, fontSize: 14 },
+
+  // ── Grid
+  row:  { justifyContent: 'space-between', paddingHorizontal: 16 },
+  list: { paddingBottom: 100, paddingTop: 4 },
+
   card: {
     width: '48%',
-    backgroundColor: 'rgba(15,23,42,0.82)',
-    borderRadius: 22,
+    backgroundColor: C.white,
+    borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.1)',
+    borderColor: C.border,
     marginBottom: 14,
-    shadowColor: '#020617',
-    shadowOpacity: 0.22,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
   },
+
   cardImgBox: {
     width: '100%',
     height: 130,
-    backgroundColor: 'rgba(96,165,250,0.14)',
+    backgroundColor: C.bgSubtle,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
   },
   productImage: { width: '100%', height: '100%' },
-  imageCount: { position: 'absolute', bottom: 8, right: 8, backgroundColor: 'rgba(15,23,42,0.78)', paddingHorizontal: 7, paddingVertical: 4, borderRadius: 5 },
-  imageCountText: { color: '#fff', fontSize: 10, fontWeight: '700' },
-  cardEmoji: { fontSize: 34 },
+
+  imageCount: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  imageCountText: { color: C.white, fontSize: 10, fontWeight: '700' },
+
   ageBadge: {
     position: 'absolute',
-    top: 10,
-    left: 10,
-    backgroundColor: 'rgba(239,68,68,0.15)',
+    top: 8,
+    left: 8,
+    backgroundColor: '#FEE2E2',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.2)',
+    borderColor: '#FCA5A5',
   },
-  ageBadgeText: { color: '#fca5a5', fontSize: 10, fontWeight: '900' },
+  ageBadgeText: { color: C.red, fontSize: 10, fontWeight: '800' },
+
   lowStockBadge: {
     position: 'absolute',
-    bottom: 10,
-    right: 10,
-    backgroundColor: 'rgba(245,158,11,0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    bottom: 8,
+    left: 8,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
-  lowStockText: { color: '#fbbf24', fontSize: 9, fontWeight: '800' },
+  lowStockText: { color: '#92400E', fontSize: 9, fontWeight: '800' },
+
   cardBody: { padding: 12 },
   cardCat: {
-    color: '#60a5fa',
+    color: C.green,
     fontSize: 10,
     fontWeight: '800',
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 6,
+    letterSpacing: 0.6,
+    marginBottom: 4,
   },
-  cardName: { color: '#f8fafc', fontSize: 15, fontWeight: '800', lineHeight: 20, minHeight: 40 },
-  cardFooter: { marginTop: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardPrice: { color: '#f8fafc', fontSize: 16, fontWeight: '900' },
+  cardName: {
+    color: C.text,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 19,
+    minHeight: 38,
+  },
+  cardFooter: {
+    marginTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  cardPrice: { color: C.green, fontSize: 16, fontWeight: '700' },
   addBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    backgroundColor: '#3b82f6',
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: C.green,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#3b82f6',
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
   },
-  addBtnText: { color: '#fff', fontWeight: '900', fontSize: 22, lineHeight: 22 },
 
-  emptyBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 80 },
-  emptyIcon: { fontSize: 40, marginBottom: 12 },
-  emptyText: { color: '#94a3b8', fontSize: 15, fontWeight: '700' },
+  // ── Empty
+  emptyBox:  { alignItems: 'center', paddingVertical: 80, paddingHorizontal: 24 },
+  emptyTitle:{ color: C.text, fontSize: 18, fontWeight: '700', marginBottom: 8 },
+  emptyText: { color: C.textMid, fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
+  emptyBtn:  {
+    backgroundColor: C.green,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  emptyBtnText: { color: C.white, fontWeight: '700', fontSize: 14 },
 });

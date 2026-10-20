@@ -12,7 +12,9 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { C } from '../../lib/theme';
 
 interface Sale {
   id: string;
@@ -23,6 +25,7 @@ interface Sale {
   cashier_id: string | null;
   customer_dni: string | null;
   customer_name: string | null;
+  prescription_number: string | null;
   cancellation_reason: string | null;
   cancelled_at: string | null;
 }
@@ -69,11 +72,20 @@ export default function ReceiptsScreen() {
 
   async function fetchSales() {
     setLoading(true);
-    const { data, error } = await supabase
+    const BASE = 'id, total_amount, payment_method, status, created_at, cashier_id, customer_dni, customer_name, cancellation_reason, cancelled_at';
+    let res: any = await supabase
       .from('sales')
-      .select('id, total_amount, payment_method, status, created_at, cashier_id, customer_dni, customer_name, cancellation_reason, cancelled_at')
+      .select(`${BASE}, prescription_number`)
       .order('created_at', { ascending: false })
       .limit(100);
+    if (res.error && /prescription_number/i.test(res.error.message)) {
+      res = await supabase
+        .from('sales')
+        .select(BASE)
+        .order('created_at', { ascending: false })
+        .limit(100);
+    }
+    const { data, error } = res;
     if (error) {
       Alert.alert('No se pudieron cargar las boletas', error.message);
       setSales([]);
@@ -150,6 +162,7 @@ export default function ReceiptsScreen() {
       Fecha: ${htmlEscape(new Date(selectedSale.created_at).toLocaleString('es-PE'))}<br>
       Cliente: ${htmlEscape(selectedSale.customer_name || 'Cliente general')}<br>
       ${selectedSale.customer_dni ? `DNI: ${htmlEscape(selectedSale.customer_dni)}<br>` : ''}
+      ${selectedSale.prescription_number ? `Receta médica: ${htmlEscape(selectedSale.prescription_number)}<br>` : ''}
       Método de pago: ${htmlEscape(selectedSale.payment_method)}</div>
       <table><thead><tr><th>Producto</th><th>Cant.</th><th>Precio</th><th>Total</th></tr></thead><tbody>${productRows}</tbody></table>
       <div class="total"><span>TOTAL</span><span>${htmlEscape(money(selectedSale.total_amount))}</span></div>
@@ -163,24 +176,32 @@ export default function ReceiptsScreen() {
   return (
     <View style={s.container}>
       <View style={s.headingRow}>
-        <View>
+        <View style={{ flex: 1 }}>
+          <Text style={s.eyebrow}>HISTORIAL</Text>
           <Text style={s.title}>Boletas y ventas</Text>
           <Text style={s.subtitle}>Consulta, imprime o corrige una venta dejando registro de la anulación.</Text>
         </View>
-        <TouchableOpacity style={s.refreshButton} onPress={fetchSales}>
+        <TouchableOpacity style={s.refreshButton} onPress={fetchSales} accessibilityRole="button">
+          <Ionicons name="refresh-outline" size={15} color={C.textMid} />
           <Text style={s.refreshText}>Actualizar</Text>
         </TouchableOpacity>
       </View>
 
       {loading ? (
-        <ActivityIndicator color="#f59e0b" style={{ marginTop: 40 }} />
+        <ActivityIndicator color={C.green} style={{ marginTop: 40 }} />
       ) : (
         <FlatList
           data={sales}
           keyExtractor={(sale) => sale.id}
           contentContainerStyle={{ paddingBottom: 24 }}
           renderItem={({ item: sale }) => (
-            <TouchableOpacity style={s.card} onPress={() => openReceipt(sale)} activeOpacity={0.85}>
+            <TouchableOpacity
+              style={s.card}
+              onPress={() => openReceipt(sale)}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={`Boleta ${sale.id.slice(0, 8).toUpperCase()}`}
+            >
               <View style={s.cardInfo}>
                 <Text style={s.cardId}>Boleta {sale.id.slice(0, 8).toUpperCase()}</Text>
                 <Text style={s.cardDate}>{new Date(sale.created_at).toLocaleString('es-PE')}</Text>
@@ -188,13 +209,20 @@ export default function ReceiptsScreen() {
               </View>
               <View style={s.cardRight}>
                 <Text style={s.cardTotal}>{money(sale.total_amount)}</Text>
-                <Text style={[s.status, sale.status === 'completed' ? s.statusComplete : s.statusCancelled]}>
-                  {sale.status === 'completed' ? 'VIGENTE' : 'ANULADA'}
-                </Text>
+                <View style={[s.statusBadge, sale.status === 'completed' ? s.statusBadgeOk : s.statusBadgeOff]}>
+                  <Text style={[s.status, sale.status === 'completed' ? s.statusComplete : s.statusCancelled]}>
+                    {sale.status === 'completed' ? 'VIGENTE' : 'ANULADA'}
+                  </Text>
+                </View>
               </View>
             </TouchableOpacity>
           )}
-          ListEmptyComponent={<Text style={s.empty}>Aún no hay boletas registradas en esta caja.</Text>}
+          ListEmptyComponent={
+            <View style={s.emptyBox}>
+              <Ionicons name="receipt-outline" size={34} color={C.textLight} />
+              <Text style={s.empty}>Aún no hay boletas registradas en esta caja.</Text>
+            </View>
+          }
         />
       )}
 
@@ -209,12 +237,13 @@ export default function ReceiptsScreen() {
                 <Text style={s.receiptMeta}>{new Date(selectedSale.created_at).toLocaleString('es-PE')}</Text>
                 <Text style={s.receiptMeta}>Cliente: {selectedSale.customer_name || 'Cliente general'}</Text>
                 {selectedSale.customer_dni && <Text style={s.receiptMeta}>DNI: {selectedSale.customer_dni}</Text>}
+                {selectedSale.prescription_number && <Text style={s.receiptMeta}>Receta: {selectedSale.prescription_number}</Text>}
                 <View style={s.divider} />
               </>
             )}
 
             {detailLoading ? (
-              <ActivityIndicator color="#b45309" />
+              <ActivityIndicator color={C.green} />
             ) : (
               items.map((item, index) => (
                 <View key={`${item.product_id}-${index}`} style={s.itemRow}>
@@ -255,6 +284,7 @@ export default function ReceiptsScreen() {
                 </TouchableOpacity>
               )}
               <TouchableOpacity style={s.primaryButton} onPress={printReceipt}>
+                <Ionicons name="print-outline" size={14} color={C.white} />
                 <Text style={s.actionText}>Imprimir / PDF</Text>
               </TouchableOpacity>
             </View>
@@ -294,45 +324,64 @@ export default function ReceiptsScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f3f4f6', padding: 16 },
-  headingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16 },
-  title: { fontSize: 22, fontWeight: '800', color: '#1f2937' },
-  subtitle: { color: '#6b7280', fontSize: 12, marginTop: 4, maxWidth: 520 },
-  refreshButton: { paddingHorizontal: 12, paddingVertical: 9, backgroundColor: '#fff', borderRadius: 9, borderWidth: 1, borderColor: '#e5e7eb' },
-  refreshText: { color: '#374151', fontSize: 12, fontWeight: '700' },
-  card: { backgroundColor: '#fff', padding: 14, borderRadius: 12, marginBottom: 9, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb' },
+  container: { flex: 1, backgroundColor: C.bgPage, padding: 22, maxWidth: 980, width: '100%', alignSelf: 'center' },
+  headingRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 18 },
+  eyebrow: { color: C.green, fontSize: 11, fontWeight: '700', letterSpacing: 1.6, marginBottom: 6 },
+  title: { fontSize: 22, fontWeight: '700', color: C.text, letterSpacing: -0.3 },
+  subtitle: { color: C.textMid, fontSize: 12, marginTop: 5, maxWidth: 560 },
+  refreshButton: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    paddingHorizontal: 13, paddingVertical: 10,
+    backgroundColor: C.white, borderRadius: 8, borderWidth: 1, borderColor: C.border,
+  },
+  refreshText: { color: C.textMid, fontSize: 12, fontWeight: '700' },
+  card: {
+    backgroundColor: C.white, padding: 15, borderRadius: 12, marginBottom: 10,
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1, borderColor: C.border,
+  },
   cardInfo: { flex: 1, minWidth: 0 },
-  cardId: { fontWeight: '800', color: '#1f2937', fontSize: 14 },
-  cardDate: { color: '#6b7280', fontSize: 12, marginTop: 3 },
-  cardBuyer: { color: '#64748b', fontSize: 11, marginTop: 4 },
+  cardId: { fontWeight: '700', color: C.text, fontSize: 14 },
+  cardDate: { color: C.textMid, fontSize: 12, marginTop: 3 },
+  cardBuyer: { color: C.textLight, fontSize: 11, marginTop: 4 },
   cardRight: { alignItems: 'flex-end' },
-  cardTotal: { fontWeight: '800', color: '#1d4ed8', fontSize: 15 },
-  status: { fontSize: 9, fontWeight: '800', letterSpacing: 0.7, marginTop: 4 },
-  statusComplete: { color: '#047857' },
-  statusCancelled: { color: '#b91c1c' },
-  empty: { textAlign: 'center', color: '#9ca3af', marginTop: 40 },
-  backdrop: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 18, backgroundColor: 'rgba(15,23,42,0.6)' },
-  receipt: { width: '100%', maxWidth: 480, backgroundColor: '#fff', borderRadius: 16, padding: 22, maxHeight: '90%' },
-  receiptTitle: { textAlign: 'center', fontSize: 18, fontWeight: '900', color: '#111827', letterSpacing: 1 },
-  receiptSubtitle: { textAlign: 'center', color: '#6b7280', fontSize: 11, marginBottom: 16 },
-  receiptMeta: { color: '#4b5563', fontSize: 11, marginTop: 4 },
-  divider: { height: 1, backgroundColor: '#e5e7eb', marginVertical: 12 },
+  cardTotal: { fontWeight: '700', color: C.text, fontSize: 15 },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginTop: 6 },
+  statusBadgeOk: { backgroundColor: C.greenLight },
+  statusBadgeOff: { backgroundColor: '#FEE2E2' },
+  status: { fontSize: 10, fontWeight: '700', letterSpacing: 0.7 },
+  statusComplete: { color: C.greenDark },
+  statusCancelled: { color: '#991B1B' },
+  emptyBox: { alignItems: 'center', gap: 10, marginTop: 44 },
+  empty: { textAlign: 'center', color: C.textMid, fontSize: 13 },
+  backdrop: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 18, backgroundColor: 'rgba(14,43,41,0.55)' },
+  receipt: { width: '100%', maxWidth: 480, backgroundColor: C.white, borderRadius: 12, padding: 22, maxHeight: '90%', borderWidth: 1, borderColor: C.border },
+  receiptTitle: { textAlign: 'center', fontSize: 18, fontWeight: '700', color: C.text, letterSpacing: 1 },
+  receiptSubtitle: { textAlign: 'center', color: C.textMid, fontSize: 11, marginBottom: 16 },
+  receiptMeta: { color: C.textMid, fontSize: 11, marginTop: 4 },
+  divider: { height: 1, backgroundColor: C.border, marginVertical: 12 },
   itemRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, gap: 10 },
-  itemName: { color: '#111827', fontSize: 12, fontWeight: '700' },
-  itemMeta: { color: '#6b7280', fontSize: 10, marginTop: 2 },
-  itemTotal: { color: '#111827', fontSize: 12, fontWeight: '700' },
+  itemName: { color: C.text, fontSize: 12, fontWeight: '600' },
+  itemMeta: { color: C.textMid, fontSize: 11, marginTop: 2 },
+  itemTotal: { color: C.text, fontSize: 12, fontWeight: '700' },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  totalLabel: { color: '#111827', fontSize: 15, fontWeight: '900' },
-  totalValue: { color: '#111827', fontSize: 15, fontWeight: '900' },
-  cancelledText: { color: '#b91c1c', fontSize: 11, fontWeight: '800', marginTop: 8 },
+  totalLabel: { color: C.text, fontSize: 15, fontWeight: '700' },
+  totalValue: { color: C.text, fontSize: 15, fontWeight: '700' },
+  cancelledText: { color: '#991B1B', fontSize: 11, fontWeight: '700', marginTop: 8 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, marginTop: 18 },
-  primaryButton: { backgroundColor: '#b45309', borderRadius: 9, paddingHorizontal: 12, paddingVertical: 10 },
-  dangerButton: { backgroundColor: '#b91c1c', borderRadius: 9, paddingHorizontal: 12, paddingVertical: 10 },
-  secondaryButton: { backgroundColor: '#f3f4f6', borderRadius: 9, paddingHorizontal: 12, paddingVertical: 10 },
-  actionText: { color: '#fff', fontWeight: '800', fontSize: 11 },
-  secondaryButtonText: { color: '#374151', fontWeight: '800', fontSize: 11 },
-  cancelCard: { width: '100%', maxWidth: 440, backgroundColor: '#fff', borderRadius: 16, padding: 20 },
-  cancelTitle: { color: '#111827', fontSize: 18, fontWeight: '900' },
-  cancelDescription: { color: '#6b7280', fontSize: 12, lineHeight: 18, marginTop: 8 },
-  reasonInput: { minHeight: 92, borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10, padding: 11, marginTop: 14, color: '#111827' },
+  primaryButton: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    backgroundColor: C.green, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 11,
+  },
+  dangerButton: { backgroundColor: C.red, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 11 },
+  secondaryButton: { backgroundColor: C.white, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 11, borderWidth: 1, borderColor: C.borderStrong },
+  actionText: { color: C.white, fontWeight: '700', fontSize: 12 },
+  secondaryButtonText: { color: C.textMid, fontWeight: '700', fontSize: 12 },
+  cancelCard: { width: '100%', maxWidth: 440, backgroundColor: C.white, borderRadius: 12, padding: 20, borderWidth: 1, borderColor: C.border },
+  cancelTitle: { color: C.text, fontSize: 18, fontWeight: '700' },
+  cancelDescription: { color: C.textMid, fontSize: 12, lineHeight: 18, marginTop: 8 },
+  reasonInput: {
+    minHeight: 96, borderWidth: 1, borderColor: C.borderStrong, borderRadius: 8,
+    padding: 12, marginTop: 14, color: C.text, fontSize: 13,
+  },
 });

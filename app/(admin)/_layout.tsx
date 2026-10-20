@@ -1,48 +1,39 @@
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, ScrollView } from 'react-native';
 import { Slot, useRouter, usePathname } from 'expo-router';
 import { useAuthStore } from '../../stores/authStore';
 import { useEffect, useRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { C, IconName } from '../../lib/theme';
 
-const NAV_ITEMS = [
-  { icon: '📊', label: 'Dashboard', route: '/(admin)', matchKey: 'index' },
-  { icon: '📦', label: 'Inventario', route: '/(stocker)/products', matchKey: 'products' },
-  { icon: '🛍️', label: 'Pedidos', route: '/(admin)/orders', matchKey: 'orders' },
-  { icon: '👥', label: 'Usuarios', route: '/(admin)/users', matchKey: 'users' },
-  { icon: '📈', label: 'Reportes', route: '/(admin)/reports', matchKey: 'reports' },
-  { icon: '🎫', label: 'Soporte', route: '/(support)/tickets', matchKey: 'tickets' },
-  { icon: '⚙️', label: 'Config.', route: '/(admin)/settings', matchKey: 'settings' },
+type NavItem = { icon: IconName; label: string; route: string; matchKey: string };
+
+const NAV_ITEMS: NavItem[] = [
+  { icon: 'grid-outline',       label: 'Dashboard',  route: '/(admin)',              matchKey: 'index' },
+  { icon: 'cube-outline',       label: 'Inventario', route: '/(stocker)/products',   matchKey: 'products' },
+  { icon: 'bag-handle-outline', label: 'Pedidos',    route: '/(admin)/orders',       matchKey: 'orders' },
+  { icon: 'people-outline',     label: 'Usuarios',   route: '/(admin)/users',        matchKey: 'users' },
+  { icon: 'bar-chart-outline',  label: 'Reportes',   route: '/(admin)/reports',      matchKey: 'reports' },
+  { icon: 'chatbubbles-outline',label: 'Soporte',    route: '/(support)/tickets',    matchKey: 'tickets' },
+  { icon: 'settings-outline',   label: 'Config.',    route: '/(admin)/settings',     matchKey: 'settings' },
 ];
 
 export default function AdminLayout() {
-  const { signOut, role } = useAuthStore();
+  const { signOut } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(-280)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
 
+  // La restricción de acceso por rol se valida en el Root Layout (app/_layout.tsx).
+  // No se navega aquí para evitar "navigate before mounting the Root Layout".
   useEffect(() => {
-    if (role && role !== 'admin') {
-      router.replace('/(store)');
-      return;
-    }
-
     Animated.spring(slideAnim, {
       toValue: 0,
       useNativeDriver: true,
       tension: 80,
       friction: 8,
     }).start();
-
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.1, duration: 1200, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
-      ])
-    );
-    pulse.start();
-    return () => pulse.stop();
   }, []);
 
   const isActive = (key: string) => {
@@ -53,29 +44,30 @@ export default function AdminLayout() {
   return (
     <View style={s.container}>
       {/* Sidebar */}
-      <Animated.View style={[s.sidebar, { transform: [{ translateX: slideAnim }], paddingTop: insets.top + 16 }]}>
-        {/* Decorative circles */}
-        <View style={s.sideCircle1} />
-        <View style={s.sideCircle2} />
-
+      <Animated.View
+        style={[
+          s.sidebar,
+          { transform: [{ translateX: slideAnim }], paddingTop: insets.top + 20 },
+        ]}
+      >
         {/* Logo */}
         <View style={s.logoArea}>
           <View style={s.logoBox}>
-            <Text style={s.logoEmoji}>🛡️</Text>
+            <Ionicons name="medkit" size={22} color={C.white} />
           </View>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={s.logoText}>Farmacia Luci</Text>
-            <Animated.View style={[s.roleBadge, { transform: [{ scale: pulseAnim }] }]}>
+            <View style={s.roleBadge}>
               <View style={s.roleDot} />
               <Text style={s.roleText}>ADMIN</Text>
-            </Animated.View>
+            </View>
           </View>
         </View>
 
         <View style={s.divider} />
 
         {/* Navigation */}
-        <View style={s.navGroup}>
+        <ScrollView style={s.navScroll} showsVerticalScrollIndicator={false}>
           <Text style={s.navGroupLabel}>MENÚ PRINCIPAL</Text>
           {NAV_ITEMS.map((item, idx) => {
             const active = isActive(item.matchKey);
@@ -85,32 +77,43 @@ export default function AdminLayout() {
                 style={[s.navItem, active && s.navItemActive]}
                 onPress={() => router.push(item.route as any)}
                 activeOpacity={0.75}
+                accessibilityRole="button"
+                accessibilityLabel={item.label}
+                accessibilityState={{ selected: active }}
               >
-                <View style={[s.navIconBox, active && s.navIconBoxActive]}>
-                  <Text style={s.navIcon}>{item.icon}</Text>
-                </View>
+                <Ionicons
+                  name={item.icon}
+                  size={18}
+                  color={active ? C.green : C.textLight}
+                />
                 <Text style={[s.navText, active && s.navTextActive]}>{item.label}</Text>
                 {active && <View style={s.activeIndicator} />}
               </TouchableOpacity>
             );
           })}
-        </View>
+        </ScrollView>
 
         {/* Bottom area */}
         <View style={s.sidebarBottom}>
           <View style={s.divider} />
           <View style={s.userInfo}>
             <View style={s.avatarBox}>
-              <Text style={s.avatarText}>👤</Text>
+              <Ionicons name="person-outline" size={16} color={C.textMid} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={s.userName}>Administrador</Text>
               <Text style={s.userEmail}>admin@gmail.com</Text>
             </View>
           </View>
-          <TouchableOpacity style={s.logoutBtn} onPress={signOut} activeOpacity={0.8}>
-            <Text style={s.logoutIcon}>🚪</Text>
-            <Text style={s.logoutText}>Cerrar Sesión</Text>
+          <TouchableOpacity
+            style={s.logoutBtn}
+            onPress={signOut}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar sesión"
+          >
+            <Ionicons name="log-out-outline" size={17} color={C.red} />
+            <Text style={s.logoutText}>Cerrar sesión</Text>
           </TouchableOpacity>
         </View>
       </Animated.View>
@@ -124,96 +127,105 @@ export default function AdminLayout() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, flexDirection: 'row', backgroundColor: '#0f172a' },
+  container: { flex: 1, flexDirection: 'row', backgroundColor: C.bgPage },
 
   sidebar: {
-    width: 240,
-    backgroundColor: '#0a0f1e',
+    width: 248,
+    backgroundColor: C.white,
     paddingHorizontal: 16,
-    paddingBottom: 24,
+    paddingBottom: 20,
     justifyContent: 'space-between',
     borderRightWidth: 1,
-    borderRightColor: 'rgba(59,130,246,0.15)',
-    overflow: 'hidden',
-    shadowColor: '#3b82f6',
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 20,
-  },
-  sideCircle1: {
-    position: 'absolute', width: 200, height: 200, borderRadius: 100,
-    backgroundColor: 'rgba(59,130,246,0.06)', top: -60, right: -60,
-  },
-  sideCircle2: {
-    position: 'absolute', width: 150, height: 150, borderRadius: 75,
-    backgroundColor: 'rgba(139,92,246,0.05)', bottom: 80, left: -40,
+    borderRightColor: C.border,
   },
 
-  logoArea: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, gap: 12 },
+  logoArea: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   logoBox: {
-    width: 48, height: 48, borderRadius: 16,
-    backgroundColor: 'rgba(59,130,246,0.15)',
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: 'rgba(59,130,246,0.3)',
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: C.green,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  logoEmoji: { fontSize: 24 },
-  logoText: { color: '#f8fafc', fontSize: 15, fontWeight: '800', letterSpacing: 0.3, marginBottom: 4 },
+  logoText: { color: C.text, fontSize: 15, fontWeight: '700', letterSpacing: -0.2, marginBottom: 4 },
   roleBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(59,130,246,0.15)',
-    paddingHorizontal: 8, paddingVertical: 3,
-    borderRadius: 12, borderWidth: 1, borderColor: 'rgba(59,130,246,0.35)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: C.bgSubtle,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: C.border,
     alignSelf: 'flex-start',
   },
-  roleDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#3b82f6' },
-  roleText: { color: '#60a5fa', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  roleDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.green },
+  roleText: { color: C.greenDark, fontSize: 10, fontWeight: '700', letterSpacing: 1 },
 
-  divider: { height: 1, backgroundColor: 'rgba(148,163,184,0.1)', marginVertical: 12 },
+  divider: { height: 1, backgroundColor: C.border, marginVertical: 16 },
 
-  navGroup: { flex: 1, gap: 4 },
-  navGroupLabel: { color: '#334155', fontSize: 10, fontWeight: '700', letterSpacing: 1.5, marginBottom: 8, marginLeft: 4, textTransform: 'uppercase' },
+  navScroll: { flex: 1 },
+  navGroupLabel: {
+    color: C.textLight,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+    marginBottom: 10,
+    marginLeft: 4,
+  },
   navItem: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingVertical: 11, paddingHorizontal: 12,
-    borderRadius: 12, position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    position: 'relative',
+    marginBottom: 2,
   },
-  navItemActive: { backgroundColor: 'rgba(59,130,246,0.12)' },
-  navIconBox: {
-    width: 34, height: 34, borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    justifyContent: 'center', alignItems: 'center',
-  },
-  navIconBoxActive: { backgroundColor: 'rgba(59,130,246,0.15)' },
-  navIcon: { fontSize: 16 },
-  navText: { color: '#64748b', fontSize: 14, fontWeight: '600', flex: 1 },
-  navTextActive: { color: '#93c5fd', fontWeight: '700' },
+  navItemActive: { backgroundColor: C.greenLight },
+  navText: { color: C.textMid, fontSize: 14, fontWeight: '600', flex: 1 },
+  navTextActive: { color: C.greenDark, fontWeight: '700' },
   activeIndicator: {
-    position: 'absolute', right: 0, top: '20%',
-    width: 3, height: '60%', borderRadius: 2,
-    backgroundColor: '#3b82f6',
+    position: 'absolute',
+    right: 0,
+    top: '22%',
+    width: 3,
+    height: '56%',
+    borderRadius: 2,
+    backgroundColor: C.green,
   },
 
   sidebarBottom: {},
-  userInfo: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12, paddingVertical: 8 },
+  userInfo: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
   avatarBox: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(59,130,246,0.1)',
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: 'rgba(59,130,246,0.2)',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: C.bgSubtle,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: C.border,
   },
-  avatarText: { fontSize: 16 },
-  userName: { color: '#e2e8f0', fontSize: 13, fontWeight: '700' },
-  userEmail: { color: '#475569', fontSize: 11, marginTop: 1 },
+  userName: { color: C.text, fontSize: 13, fontWeight: '700' },
+  userEmail: { color: C.textLight, fontSize: 11, marginTop: 1 },
 
   logoutBtn: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 11, paddingHorizontal: 12,
-    borderRadius: 12, gap: 10,
-    backgroundColor: 'rgba(239,68,68,0.08)',
-    borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    gap: 9,
+    backgroundColor: C.white,
+    borderWidth: 1,
+    borderColor: C.borderStrong,
   },
-  logoutIcon: { fontSize: 16 },
-  logoutText: { color: '#fca5a5', fontSize: 14, fontWeight: '600' },
+  logoutText: { color: C.red, fontSize: 13, fontWeight: '700' },
 
-  mainContent: { flex: 1, backgroundColor: '#0f172a' },
+  mainContent: { flex: 1, backgroundColor: C.bgPage },
 });

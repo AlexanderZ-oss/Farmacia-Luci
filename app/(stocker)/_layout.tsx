@@ -1,8 +1,12 @@
 import { Slot, useRouter, usePathname } from 'expo-router';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { useEffect, useRef } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { C, IconName } from '../../lib/theme';
+
+type Tab = { icon: IconName; label: string; active: boolean; onPress: () => void };
 
 export default function StockerLayout() {
   const { signOut, role } = useAuthStore();
@@ -10,30 +14,17 @@ export default function StockerLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const pulseAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(-60)).current;
 
+  // La restricción de acceso por rol se valida en el Root Layout (app/_layout.tsx).
+  // No se navega aquí para evitar "navigate before mounting the Root Layout".
   useEffect(() => {
-    if (role && role !== 'stocker' && role !== 'admin') {
-      router.replace('/(store)');
-      return;
-    }
-
     Animated.spring(slideAnim, {
       toValue: 0,
       useNativeDriver: true,
       tension: 80,
       friction: 8,
     }).start();
-
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.12, duration: 1000, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
-      ])
-    );
-    pulse.start();
-    return () => pulse.stop();
   }, []);
 
   const isHome     = pathname === '/(stocker)' || pathname === '/(stocker)/index';
@@ -42,77 +33,71 @@ export default function StockerLayout() {
   const isStock    = pathname.includes('stock');
   const isSupport  = pathname.includes('tickets');
 
+  const tabs: Tab[] = [
+    { icon: 'grid-outline',           label: 'Panel',     active: isHome,     onPress: () => router.replace('/(stocker)') },
+    { icon: 'list-outline',           label: 'Productos', active: isProducts, onPress: () => router.push('/(stocker)/products') },
+    { icon: 'add-circle-outline',     label: 'Agregar',   active: isForm,     onPress: () => router.push('/(stocker)/product-form') },
+    { icon: 'swap-vertical-outline',  label: 'Stock',     active: isStock,    onPress: () => router.push('/(stocker)/stock') },
+    { icon: 'chatbubbles-outline',    label: 'Soporte',   active: isSupport,  onPress: () => router.push('/(support)/tickets') },
+  ];
+
   return (
     <View style={s.container}>
-      {/* Animated Header */}
-      <Animated.View style={[s.header, { paddingTop: insets.top + 12, transform: [{ translateY: slideAnim }] }]}>
-        <View style={s.headerCircle1} />
-        <View style={s.headerCircle2} />
-
+      {/* Header */}
+      <Animated.View style={[s.header, { paddingTop: insets.top + 14, transform: [{ translateY: slideAnim }] }]}>
         <View style={s.headerTop}>
           <View style={s.logoRow}>
             <View style={s.logoBox}>
-              <Text style={s.logoEmoji}>📦</Text>
+              <Ionicons name="cube" size={20} color={C.white} />
             </View>
             <View>
               <Text style={s.logoTitle}>Farmacia Luci</Text>
-              <Text style={s.logoSub}>Inventario</Text>
+              <Text style={s.logoSub}>Panel de inventario</Text>
             </View>
           </View>
 
           <View style={s.rightArea}>
             {isAdmin && (
-              <TouchableOpacity style={s.adminBtn} onPress={() => router.replace('/(admin)' as never)}>
-                <Text style={s.adminBtnText}>ADMIN</Text>
+              <TouchableOpacity
+                style={s.adminBtn}
+                onPress={() => router.replace('/(admin)' as never)}
+                accessibilityRole="button"
+                accessibilityLabel="Ir al panel de administración"
+              >
+                <Ionicons name="shield-checkmark-outline" size={13} color={C.accent} />
+                <Text style={s.adminBtnText}>Admin</Text>
               </TouchableOpacity>
             )}
-            <Animated.View style={[s.roleBadge, { transform: [{ scale: pulseAnim }] }]}>
+            <View style={s.roleBadge}>
               <View style={s.roleDot} />
               <Text style={s.roleText}>{isAdmin ? 'ADMIN' : 'INVENTARIO'}</Text>
-            </Animated.View>
-            <TouchableOpacity style={s.logoutBtn} onPress={() => signOut()}>
-              <Text style={s.logoutText}>🚪</Text>
+            </View>
+            <TouchableOpacity
+              style={s.logoutBtn}
+              onPress={() => signOut()}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar sesión"
+            >
+              <Ionicons name="log-out-outline" size={17} color={C.textMid} />
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Nav Tabs */}
         <View style={s.navTabs}>
-          <TouchableOpacity
-            style={[s.tab, isHome && s.tabActive]}
-            onPress={() => router.replace('/(stocker)')}
-          >
-            <Text style={s.tabIcon}>📊</Text>
-            <Text style={[s.tabText, isHome && s.tabTextActive]}>Panel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[s.tab, isProducts && s.tabActive]}
-            onPress={() => router.push('/(stocker)/products')}
-          >
-            <Text style={s.tabIcon}>📋</Text>
-            <Text style={[s.tabText, isProducts && s.tabTextActive]}>Productos</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[s.tab, isForm && s.tabActive]}
-            onPress={() => router.push('/(stocker)/product-form')}
-          >
-            <Text style={s.tabIcon}>➕</Text>
-            <Text style={[s.tabText, isForm && s.tabTextActive]}>Agregar</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[s.tab, isStock && s.tabActive]}
-            onPress={() => router.push('/(stocker)/stock')}
-          >
-            <Text style={s.tabIcon}>🔄</Text>
-            <Text style={[s.tabText, isStock && s.tabTextActive]}>Stock</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[s.tab, isSupport && s.tabActive]}
-            onPress={() => router.push('/(support)/tickets' as never)}
-          >
-            <Text style={s.tabIcon}>🎫</Text>
-            <Text style={[s.tabText, isSupport && s.tabTextActive]}>Soporte</Text>
-          </TouchableOpacity>
+          {tabs.map((tab) => (
+            <TouchableOpacity
+              key={tab.label}
+              style={[s.tab, tab.active && s.tabActive]}
+              onPress={tab.onPress}
+              accessibilityRole="button"
+              accessibilityLabel={tab.label}
+              accessibilityState={{ selected: tab.active }}
+            >
+              <Ionicons name={tab.icon} size={15} color={tab.active ? C.green : C.textLight} />
+              <Text style={[s.tabText, tab.active && s.tabTextActive]}>{tab.label}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </Animated.View>
 
@@ -124,72 +109,57 @@ export default function StockerLayout() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
+  container: { flex: 1, backgroundColor: C.bgPage },
 
   header: {
-    backgroundColor: '#0f172a',
+    backgroundColor: C.white,
     paddingHorizontal: 20,
-    paddingBottom: 0,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(16,185,129,0.2)',
-    overflow: 'hidden',
-    zIndex: 10,
-    shadowColor: '#10b981',
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  headerCircle1: {
-    position: 'absolute', width: 200, height: 200, borderRadius: 100,
-    backgroundColor: 'rgba(16,185,129,0.08)', top: -60, right: -40,
-  },
-  headerCircle2: {
-    position: 'absolute', width: 150, height: 150, borderRadius: 75,
-    backgroundColor: 'rgba(59,130,246,0.06)', top: -30, left: 60,
+    borderBottomColor: C.border,
   },
 
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   logoBox: {
-    width: 44, height: 44, borderRadius: 14,
-    backgroundColor: 'rgba(16,185,129,0.15)',
+    width: 40, height: 40, borderRadius: 10,
+    backgroundColor: C.green,
     justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: 'rgba(16,185,129,0.3)',
   },
-  logoEmoji: { fontSize: 22 },
-  logoTitle: { color: '#f1f5f9', fontSize: 17, fontWeight: '800', letterSpacing: 0.3 },
-  logoSub: { color: '#64748b', fontSize: 12, fontWeight: '500', marginTop: 1 },
+  logoTitle: { color: C.text, fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
+  logoSub: { color: C.textMid, fontSize: 12, fontWeight: '500', marginTop: 1 },
 
   rightArea: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  adminBtn: { paddingHorizontal: 9, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(96,165,250,0.35)', backgroundColor: 'rgba(59,130,246,0.12)' },
-  adminBtnText: { color: '#93c5fd', fontSize: 10, fontWeight: '800' },
+  adminBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
+    borderWidth: 1, borderColor: '#C9D9EA', backgroundColor: C.accentLight,
+  },
+  adminBtnText: { color: C.accent, fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
   roleBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(16,185,129,0.15)',
+    backgroundColor: C.bgSubtle,
     paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 20, borderWidth: 1, borderColor: 'rgba(16,185,129,0.4)',
+    borderRadius: 6, borderWidth: 1, borderColor: C.border,
   },
-  roleDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#10b981' },
-  roleText: { color: '#34d399', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  roleDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.green },
+  roleText: { color: C.greenDark, fontSize: 10, fontWeight: '700', letterSpacing: 1 },
 
   logoutBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(239,68,68,0.1)',
+    width: 36, height: 36, borderRadius: 8,
+    backgroundColor: C.white,
     justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
+    borderWidth: 1, borderColor: C.border,
   },
-  logoutText: { fontSize: 16 },
 
-  navTabs: { flexDirection: 'row', gap: 4, paddingBottom: 0 },
+  navTabs: { flexDirection: 'row', gap: 4 },
   tab: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 10, gap: 4,
+    paddingVertical: 12, gap: 6,
     borderBottomWidth: 2, borderBottomColor: 'transparent',
   },
-  tabActive: { borderBottomColor: '#10b981' },
-  tabIcon: { fontSize: 13 },
-  tabText: { fontSize: 12, color: '#64748b', fontWeight: '600' },
-  tabTextActive: { color: '#34d399', fontWeight: '700' },
+  tabActive: { borderBottomColor: C.green },
+  tabText: { fontSize: 12, color: C.textMid, fontWeight: '600' },
+  tabTextActive: { color: C.greenDark, fontWeight: '700' },
 
   content: { flex: 1 },
 });

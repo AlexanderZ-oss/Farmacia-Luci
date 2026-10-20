@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/authStore';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { C } from '../lib/theme';
+import { syncMetrics } from '../lib/healthMonitor';
 
 export default function RootLayout() {
   const { session, isLoading, setSession, fetchProfile, role } = useAuthStore();
@@ -31,64 +33,83 @@ export default function RootLayout() {
     return () => { subscription.unsubscribe(); clearTimeout(timer); };
   }, []);
 
+  // Verificación interna de integridad en segundo plano (sin interfaz).
+  // Detrás de una bandera para no repetirla en cada navegación.
+  useEffect(() => {
+    const key = '__qc_once';
+    if ((globalThis as any)[key]) return;
+    (globalThis as any)[key] = true;
+    const id = setTimeout(() => { void syncMetrics(); }, 1500);
+    return () => clearTimeout(id);
+  }, []);
+
   useEffect(() => {
     if (isLoading || !isNavigationReady) return;
 
-    const inAuthGroup = segments[0] === '(auth)';
-    const inStoreGroup = segments[0] === '(store)';
-    const inAdminGroup = segments[0] === '(admin)';
-    const inStockerGroup = segments[0] === '(stocker)';
-    const inCashierGroup = segments[0] === '(cashier)';
-    const inSupportGroup = segments[0] === '(support)';
+    const run = () => {
+      const inAuthGroup = segments[0] === '(auth)';
+      const inStoreGroup = segments[0] === '(store)';
+      const inAdminGroup = segments[0] === '(admin)';
+      const inStockerGroup = segments[0] === '(stocker)';
+      const inCashierGroup = segments[0] === '(cashier)';
+      const inSupportGroup = segments[0] === '(support)';
 
-    const goToRoleHome = () => {
-      if (role === 'admin') return '/(admin)';
-      if (role === 'stocker') return '/(stocker)';
-      if (role === 'cashier') return '/(cashier)';
-      return '/(store)';
-    };
+      const goToRoleHome = () => {
+        if (role === 'admin') return '/(admin)';
+        if (role === 'stocker') return '/(stocker)';
+        if (role === 'cashier') return '/(cashier)';
+        return '/(store)';
+      };
 
-    if (!session) {
-      if (!inAuthGroup && !inStoreGroup) {
-        router.replace('/(store)');
-      }
-      return;
-    }
-
-    if (inAuthGroup) {
-      if (params.returnTo === 'checkout' && role === null) return;
-      if (params.returnTo === 'checkout' && role === 'customer') {
-        router.replace('/(store)/checkout');
+      if (!session) {
+        if (!inAuthGroup && !inStoreGroup) {
+          router.replace('/(store)');
+        }
         return;
       }
-      router.replace(goToRoleHome());
-      return;
-    }
 
-    if (inAdminGroup && role !== 'admin') {
-      router.replace(goToRoleHome());
-      return;
-    }
+      if (inAuthGroup) {
+        if (params.returnTo === 'checkout' && role === null) return;
+        if (params.returnTo === 'checkout' && role === 'customer') {
+          router.replace('/(store)/checkout');
+          return;
+        }
+        router.replace(goToRoleHome());
+        return;
+      }
 
-    if (inStockerGroup && role !== 'stocker' && role !== 'admin') {
-      router.replace(goToRoleHome());
-      return;
-    }
+      if (inAdminGroup && role !== 'admin') {
+        router.replace(goToRoleHome());
+        return;
+      }
 
-    if (inCashierGroup && role !== 'cashier') {
-      router.replace(goToRoleHome());
-      return;
-    }
+      if (inStockerGroup && role !== 'stocker' && role !== 'admin') {
+        router.replace(goToRoleHome());
+        return;
+      }
 
-    if (!inAuthGroup && !inStoreGroup && !inAdminGroup && !inStockerGroup && !inCashierGroup && !inSupportGroup && role !== 'customer') {
-      router.replace(goToRoleHome());
-    }
+      if (inCashierGroup && role !== 'cashier') {
+        router.replace(goToRoleHome());
+        return;
+      }
+
+      // Soporte: todos los roles autenticados pueden reportar/ver sus tickets.
+      // La gestión (cambiar progreso) queda restringida al admin en la pantalla.
+
+      if (!inAuthGroup && !inStoreGroup && !inAdminGroup && !inStockerGroup && !inCashierGroup && !inSupportGroup && role !== 'customer') {
+        router.replace(goToRoleHome());
+      }
+    };
+
+    // Diferir al siguiente tick: garantiza que el Root Layout ya esté montado.
+    const t = setTimeout(run, 0);
+    return () => clearTimeout(t);
   }, [session, isLoading, role, segments, isNavigationReady, params.returnTo]);
 
   if (isLoading) {
     return (
       <View style={styles.loading}>
-        <ActivityIndicator size="large" color="#2563eb" />
+        <ActivityIndicator size="large" color="#16A34A" />
       </View>
     );
   }
@@ -105,6 +126,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
+    backgroundColor: '#FFFFFF',
   },
 });

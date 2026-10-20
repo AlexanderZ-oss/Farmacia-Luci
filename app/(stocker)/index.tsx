@@ -1,11 +1,13 @@
 import {
-  View, Text, TouchableOpacity, FlatList, StyleSheet,
+  View, Text, TouchableOpacity, StyleSheet,
   ActivityIndicator, Animated, ScrollView, Alert,
 } from 'react-native';
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../stores/authStore';
+import { Ionicons } from '@expo/vector-icons';
+import { C, IconName } from '../../lib/theme';
 
 export default function StockerDashboard() {
   const [lowStock, setLowStock] = useState<any[]>([]);
@@ -24,7 +26,6 @@ export default function StockerDashboard() {
       Animated.spring(slideAnim, { toValue: 0, tension: 70, friction: 8, useNativeDriver: true }),
     ]).start();
 
-    // Rotating animation for low stock icon
     const spin = Animated.loop(
       Animated.timing(rotateAnim, { toValue: 1, duration: 3000, useNativeDriver: true })
     );
@@ -80,86 +81,92 @@ export default function StockerDashboard() {
 
   const spin = rotateAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
-  const actions = [
-    { icon: '📦', label: 'Ver Productos', color: 'rgba(59,130,246,0.2)', border: 'rgba(59,130,246,0.4)', route: '/(stocker)/products' },
-    { icon: '➕', label: 'Nuevo Producto', color: 'rgba(16,185,129,0.2)', border: 'rgba(16,185,129,0.4)', route: '/(stocker)/product-form' },
-    { icon: '🔄', label: 'Ajuste de Stock', color: 'rgba(139,92,246,0.2)', border: 'rgba(139,92,246,0.4)', route: '/(stocker)/stock' },
+  const actions: { icon: IconName; label: string; route: string }[] = [
+    { icon: 'list-outline',      label: 'Ver productos',     route: '/(stocker)/products' },
+    { icon: 'add-circle-outline',label: 'Nuevo producto',    route: '/(stocker)/product-form' },
+    { icon: 'swap-vertical-outline', label: 'Ajuste de stock', route: '/(stocker)/stock' },
   ];
 
   return (
     <Animated.View style={[s.wrapper, { opacity: fadeAnim }]}>
-      <View style={s.circle1} />
-      <View style={s.circle2} />
-      <View style={s.circle3} />
-
       <ScrollView style={s.scroll} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
         <Animated.View style={{ transform: [{ translateY: slideAnim }] }}>
 
           {/* Welcome Banner */}
           <View style={s.banner}>
             <View style={s.bannerLeft}>
-              <Text style={s.bannerTitle}>Panel de Inventario</Text>
+              <Text style={s.eyebrow}>INVENTARIO</Text>
+              <Text style={s.bannerTitle}>Panel de inventario</Text>
               <Text style={s.bannerSub}>Gestión de productos y stock</Text>
             </View>
-            <TouchableOpacity style={s.refreshBtn} onPress={fetchData}>
-              <Animated.Text style={[s.refreshIcon, { transform: [{ rotate: loading ? spin : '0deg' }] }]}>🔄</Animated.Text>
+            <TouchableOpacity
+              style={s.refreshBtn}
+              onPress={fetchData}
+              accessibilityRole="button"
+              accessibilityLabel="Actualizar inventario"
+            >
+              <Animated.View style={{ transform: [{ rotate: loading ? spin : '0deg' }] }}>
+                <Ionicons name="refresh-outline" size={18} color={C.greenDark} />
+              </Animated.View>
             </TouchableOpacity>
           </View>
 
           {/* Stats Row */}
           {loading ? (
-            <ActivityIndicator color="#10b981" style={{ marginBottom: 24 }} />
+            <ActivityIndicator color={C.green} style={{ marginBottom: 24 }} />
           ) : (
             <View style={s.statsRow}>
-              <View style={[s.statCard, { borderColor: 'rgba(59,130,246,0.3)' }]}>
-                <Text style={s.statIcon}>📋</Text>
+              <View style={s.statCard}>
+                <Ionicons name="list-outline" size={19} color={C.accent} />
                 <Text style={s.statVal}>{stats.total}</Text>
                 <Text style={s.statLbl}>Total</Text>
               </View>
-              <View style={[s.statCard, { borderColor: 'rgba(16,185,129,0.3)' }]}>
-                <Text style={s.statIcon}>✅</Text>
-                <Text style={[s.statVal, { color: '#34d399' }]}>{stats.active}</Text>
+              <View style={s.statCard}>
+                <Ionicons name="checkmark-circle-outline" size={19} color={C.greenDark} />
+                <Text style={[s.statVal, { color: C.greenDark }]}>{stats.active}</Text>
                 <Text style={s.statLbl}>Activos</Text>
               </View>
-              <View style={[s.statCard, { borderColor: 'rgba(239,68,68,0.3)' }]}>
-                <Text style={s.statIcon}>⚠️</Text>
-                <Text style={[s.statVal, { color: '#f87171' }]}>{stats.lowStockCount}</Text>
+              <View style={s.statCard}>
+                <Ionicons name="alert-circle-outline" size={19} color={C.amber} />
+                <Text style={[s.statVal, { color: '#92400E' }]}>{stats.lowStockCount}</Text>
                 <Text style={s.statLbl}>Stock bajo</Text>
               </View>
             </View>
           )}
 
           {/* Action Buttons */}
-          <Text style={s.sectionTitle}>Acciones Rápidas</Text>
+          <Text style={s.sectionTitle}>Acciones rápidas</Text>
           <View style={s.grid}>
             {actions.map((a, idx) => (
               <TouchableOpacity
                 key={idx}
-                style={[s.actionBtn, { borderColor: a.border }]}
+                style={s.actionBtn}
                 onPress={() => router.push(a.route as any)}
                 activeOpacity={0.75}
+                accessibilityRole="button"
+                accessibilityLabel={a.label}
               >
-                <View style={[s.actionIcon, { backgroundColor: a.color }]}>
-                  <Text style={s.actionEmoji}>{a.icon}</Text>
+                <View style={s.actionIcon}>
+                  <Ionicons name={a.icon} size={19} color={C.greenDark} />
                 </View>
                 <Text style={s.actionText}>{a.label}</Text>
-                <Text style={s.actionArrow}>›</Text>
+                <Ionicons name="chevron-forward" size={17} color={C.textLight} />
               </TouchableOpacity>
             ))}
           </View>
 
           {/* Low Stock List */}
           <View style={s.alertHeader}>
-            <Animated.Text style={[s.alertIcon, { transform: [{ rotate: spin }] }]}>⚠️</Animated.Text>
-            <Text style={s.sectionTitle}>Alertas de Stock Bajo</Text>
+            <Ionicons name="alert-circle-outline" size={17} color={C.amber} />
+            <Text style={s.sectionTitle}>Alertas de stock bajo</Text>
           </View>
 
           {loading ? (
-            <ActivityIndicator color="#f87171" style={{ marginTop: 20 }} />
+            <ActivityIndicator color={C.amber} style={{ marginTop: 20 }} />
           ) : lowStock.length === 0 ? (
             <View style={s.emptyBox}>
-              <Text style={s.emptyIcon}>🎉</Text>
-              <Text style={s.emptyText}>¡Todo el stock está en orden!</Text>
+              <Ionicons name="checkmark-circle-outline" size={40} color={C.green} />
+              <Text style={s.emptyText}>Todo el stock está en orden</Text>
             </View>
           ) : (
             <View style={s.alertList}>
@@ -168,7 +175,7 @@ export default function StockerDashboard() {
                 return (
                   <View key={item.id} style={[s.alertCard, isDanger ? s.alertCardDanger : s.alertCardWarn]}>
                     <View style={s.alertCardLeft}>
-                      <View style={[s.alertDot, { backgroundColor: isDanger ? '#ef4444' : '#f59e0b' }]} />
+                      <View style={[s.alertDot, { backgroundColor: isDanger ? C.red : C.amber }]} />
                       <Text style={s.alertName} numberOfLines={1}>{item.name}</Text>
                     </View>
                     <View style={[s.alertBadge, isDanger ? s.badgeDanger : s.badgeWarn]}>
@@ -188,144 +195,100 @@ export default function StockerDashboard() {
 }
 
 const s = StyleSheet.create({
-  wrapper: {
-    flex: 1,
-    backgroundColor: '#050d17',
-  },
-  circle1: {
-    position: 'absolute',
-    width: 360,
-    height: 360,
-    borderRadius: 180,
-    backgroundColor: 'rgba(16,185,129,0.1)',
-    top: -80,
-    right: -80,
-  },
-  circle2: {
-    position: 'absolute',
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    backgroundColor: 'rgba(59,130,246,0.08)',
-    bottom: 100,
-    left: -60,
-  },
-  circle3: {
-    position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(139,92,246,0.06)',
-    top: '50%',
-    right: 20,
-  },
+  wrapper: { flex: 1, backgroundColor: C.bgPage },
   scroll: { flex: 1 },
-  content: { padding: 20, paddingBottom: 40 },
+  content: { padding: 22, paddingBottom: 44, maxWidth: 980, width: '100%', alignSelf: 'center' },
 
   banner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 14,
     marginBottom: 24,
-    backgroundColor: 'rgba(16,185,129,0.08)',
+    backgroundColor: C.white,
     padding: 20,
-    borderRadius: 24,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(16,185,129,0.2)',
-    shadowColor: '#10b981',
-    shadowOpacity: 0.12,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
+    borderColor: C.border,
   },
   bannerLeft: { flex: 1 },
-  bannerTitle: { fontSize: 24, fontWeight: '900', color: '#f8fafc', letterSpacing: 0.3 },
-  bannerSub: { fontSize: 13, color: '#94a3b8', marginTop: 4 },
+  eyebrow: { color: C.green, fontSize: 11, fontWeight: '700', letterSpacing: 1.6, marginBottom: 6 },
+  bannerTitle: { fontSize: 23, fontWeight: '700', color: C.text, letterSpacing: -0.4 },
+  bannerSub: { fontSize: 13, color: C.textMid, marginTop: 5 },
   refreshBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(16,185,129,0.12)',
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: C.white,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(16,185,129,0.25)',
+    borderColor: C.border,
   },
-  refreshIcon: { fontSize: 20 },
 
   statsRow: { flexDirection: 'row', gap: 12, marginBottom: 28 },
   statCard: {
     flex: 1,
     alignItems: 'center',
-    padding: 16,
-    backgroundColor: 'rgba(15,23,42,0.82)',
-    borderRadius: 18,
+    padding: 18,
+    backgroundColor: C.white,
+    borderRadius: 12,
     borderWidth: 1,
-    shadowColor: '#020617',
-    shadowOpacity: 0.22,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
+    borderColor: C.border,
+    gap: 7,
   },
-  statIcon: { fontSize: 22, marginBottom: 6 },
-  statVal: { fontSize: 22, fontWeight: '900', color: '#f8fafc', marginBottom: 2 },
+  statVal: { fontSize: 22, fontWeight: '700', color: C.text, letterSpacing: -0.4 },
   statLbl: {
     fontSize: 11,
-    color: '#94a3b8',
+    color: C.textMid,
     fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
 
-  sectionTitle: { fontSize: 15, fontWeight: '800', color: '#dbeafe', letterSpacing: 0.3 },
+  sectionTitle: { fontSize: 15, fontWeight: '700', color: C.text, letterSpacing: -0.2 },
   grid: { gap: 10, marginBottom: 28, marginTop: 12 },
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15,23,42,0.82)',
+    backgroundColor: C.white,
     padding: 16,
-    borderRadius: 18,
+    borderRadius: 12,
     borderWidth: 1,
+    borderColor: C.border,
     gap: 14,
-    shadowColor: '#020617',
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
   },
   actionIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: C.greenLight,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  actionEmoji: { fontSize: 22 },
-  actionText: { flex: 1, fontSize: 15, color: '#e2e8f0', fontWeight: '800' },
-  actionArrow: { color: '#64748b', fontSize: 24, fontWeight: '300' },
+  actionText: { flex: 1, fontSize: 15, color: C.text, fontWeight: '700' },
 
   alertHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  alertIcon: { fontSize: 16 },
-
   alertList: { gap: 8 },
   alertCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 14,
-    borderRadius: 16,
+    padding: 15,
+    borderRadius: 10,
     borderWidth: 1,
   },
-  alertCardDanger: { backgroundColor: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.2)' },
-  alertCardWarn: { backgroundColor: 'rgba(245,158,11,0.08)', borderColor: 'rgba(245,158,11,0.2)' },
+  alertCardDanger: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+  alertCardWarn: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
   alertCardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 },
   alertDot: { width: 8, height: 8, borderRadius: 4 },
-  alertName: { fontSize: 14, color: '#e2e8f0', fontWeight: '700', flex: 1 },
-  alertBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
-  badgeDanger: { backgroundColor: 'rgba(239,68,68,0.15)' },
-  badgeWarn: { backgroundColor: 'rgba(245,158,11,0.15)' },
-  alertStock: { fontSize: 13, fontWeight: '900' },
-  stockDanger: { color: '#f87171' },
-  stockWarn: { color: '#fbbf24' },
+  alertName: { fontSize: 14, color: C.text, fontWeight: '600', flex: 1 },
+  alertBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
+  badgeDanger: { backgroundColor: '#FEE2E2' },
+  badgeWarn: { backgroundColor: '#FEF3C7' },
+  alertStock: { fontSize: 13, fontWeight: '700' },
+  stockDanger: { color: '#991B1B' },
+  stockWarn: { color: '#92400E' },
 
-  emptyBox: { alignItems: 'center', paddingVertical: 40 },
-  emptyIcon: { fontSize: 48, marginBottom: 12 },
-  emptyText: { fontSize: 15, color: '#94a3b8', fontWeight: '700' },
+  emptyBox: { alignItems: 'center', paddingVertical: 40, gap: 12 },
+  emptyText: { fontSize: 15, color: C.textMid, fontWeight: '600' },
 });

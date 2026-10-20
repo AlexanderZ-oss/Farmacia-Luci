@@ -11,6 +11,8 @@ import {
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../stores/authStore';
+import { Ionicons } from '@expo/vector-icons';
+import { C } from '../../lib/theme';
 
 type SettingKey = 'pharmacy_name' | 'address' | 'phone' | 'contact_email' | 'low_stock_threshold';
 type SettingsValues = Record<SettingKey, string>;
@@ -90,10 +92,11 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
+      <Text style={s.eyebrow}>CONFIGURACIÓN</Text>
       <Text style={s.title}>Configuración de la farmacia</Text>
       <Text style={s.subtitle}>Administra información de contacto y parámetros de operación.</Text>
 
-      {loading ? <ActivityIndicator color="#2563eb" style={{ marginTop: 30 }} /> : (
+      {loading ? <ActivityIndicator color={C.green} style={{ marginTop: 30 }} /> : (
         <>
           <View style={s.card}>
             <Text style={s.sectionTitle}>Datos comerciales</Text>
@@ -105,6 +108,7 @@ export default function SettingsScreen() {
                   value={values[field.key]}
                   onChangeText={(value) => setValues((current) => ({ ...current, [field.key]: value }))}
                   placeholder={field.placeholder}
+                  placeholderTextColor={C.textLight}
                   keyboardType={field.keyboardType ?? 'default'}
                   autoCapitalize={field.key === 'contact_email' ? 'none' : 'sentences'}
                   multiline={field.multiline}
@@ -112,13 +116,22 @@ export default function SettingsScreen() {
               </View>
             ))}
             <Text style={s.hint}>En el panel de inventario se respeta el valor mayor entre este umbral y el mínimo configurado para cada producto.</Text>
-            <TouchableOpacity style={s.saveButton} disabled={saving} onPress={saveSettings}>
+            <TouchableOpacity
+              style={[s.saveButton, saving && s.saveButtonDisabled]}
+              disabled={saving}
+              onPress={saveSettings}
+              accessibilityRole="button"
+            >
+              <Ionicons name="save-outline" size={16} color={C.white} />
               <Text style={s.saveText}>{saving ? 'Guardando…' : 'Guardar configuración'}</Text>
             </TouchableOpacity>
           </View>
 
           <View style={s.noteCard}>
-            <Text style={s.noteTitle}>Acceso y seguridad</Text>
+            <View style={s.noteTitleRow}>
+              <Ionicons name="shield-checkmark-outline" size={16} color={C.accent} />
+              <Text style={s.noteTitle}>Acceso y seguridad</Text>
+            </View>
             <Text style={s.noteText}>
               Los cambios se guardan en Supabase. La edición de roles continúa restringida a administradores; las claves y credenciales del sistema no se muestran en esta pantalla.
             </Text>
@@ -130,20 +143,30 @@ export default function SettingsScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f3f4f6' },
-  content: { padding: 20, paddingBottom: 40 },
-  title: { color: '#111827', fontSize: 24, fontWeight: '900' },
-  subtitle: { color: '#6b7280', fontSize: 13, marginTop: 5, marginBottom: 18 },
-  card: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 14, padding: 18 },
-  sectionTitle: { color: '#1f2937', fontSize: 16, fontWeight: '800', marginBottom: 12 },
-  field: { marginBottom: 13 },
-  hint: { color: '#6b7280', fontSize: 11, lineHeight: 16, marginTop: -4, marginBottom: 10 },
-  label: { color: '#4b5563', fontSize: 12, fontWeight: '700', marginBottom: 6 },
-  input: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 9, paddingHorizontal: 12, paddingVertical: 10, color: '#111827', backgroundColor: '#fff', fontSize: 14 },
-  multiline: { minHeight: 78, textAlignVertical: 'top' },
-  saveButton: { alignSelf: 'flex-start', backgroundColor: '#1d4ed8', paddingHorizontal: 16, paddingVertical: 11, borderRadius: 9, marginTop: 4 },
-  saveText: { color: '#fff', fontSize: 13, fontWeight: '800' },
-  noteCard: { backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 12, padding: 15, marginTop: 14 },
-  noteTitle: { color: '#1e3a8a', fontSize: 13, fontWeight: '800' },
-  noteText: { color: '#1e40af', fontSize: 12, lineHeight: 18, marginTop: 5 },
+  container: { flex: 1, backgroundColor: C.bgPage },
+  content: { padding: 22, paddingBottom: 44, maxWidth: 880, width: '100%', alignSelf: 'center' },
+  eyebrow: { color: C.green, fontSize: 11, fontWeight: '700', letterSpacing: 1.6, marginBottom: 6 },
+  title: { color: C.text, fontSize: 23, fontWeight: '700', letterSpacing: -0.4 },
+  subtitle: { color: C.textMid, fontSize: 13, marginTop: 6, marginBottom: 20 },
+  card: { backgroundColor: C.white, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 20 },
+  sectionTitle: { color: C.text, fontSize: 16, fontWeight: '700', marginBottom: 16 },
+  field: { marginBottom: 14 },
+  hint: { color: C.textMid, fontSize: 11, lineHeight: 16, marginTop: -2, marginBottom: 14 },
+  label: { color: C.textMid, fontSize: 12, fontWeight: '600', marginBottom: 6, letterSpacing: 0.3 },
+  input: {
+    borderWidth: 1, borderColor: C.borderStrong, borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 11,
+    color: C.text, backgroundColor: C.white, fontSize: 14,
+  },
+  multiline: { minHeight: 80, textAlignVertical: 'top' },
+  saveButton: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start',
+    backgroundColor: C.green, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 8, marginTop: 4,
+  },
+  saveButtonDisabled: { opacity: 0.65 },
+  saveText: { color: C.white, fontSize: 13, fontWeight: '700' },
+  noteCard: { backgroundColor: C.accentLight, borderWidth: 1, borderColor: '#C9D9EA', borderRadius: 12, padding: 16, marginTop: 16 },
+  noteTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  noteTitle: { color: C.accent, fontSize: 13, fontWeight: '700' },
+  noteText: { color: C.accent, fontSize: 12, lineHeight: 18, marginTop: 7 },
 });

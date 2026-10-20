@@ -9,7 +9,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { C, IconName } from '../../lib/theme';
 
 type OrderStatus = 'pending' | 'confirmed' | 'shipped' | 'ready_pickup' | 'delivered' | 'cancelled';
 type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
@@ -42,6 +44,21 @@ const PAYMENT_STATUSES: { value: PaymentStatus; label: string }[] = [
   { value: 'failed', label: 'Fallido' },
   { value: 'refunded', label: 'Reembolsado' },
 ];
+
+const ORDER_STATUS_ICONS: Record<OrderStatus, IconName> = {
+  pending: 'time-outline',
+  confirmed: 'checkmark-circle-outline',
+  shipped: 'car-outline',
+  ready_pickup: 'storefront-outline',
+  delivered: 'checkmark-done-outline',
+  cancelled: 'close-circle-outline',
+};
+const PAYMENT_STATUS_ICONS: Record<PaymentStatus, IconName> = {
+  pending: 'time-outline',
+  paid: 'checkmark-circle',
+  failed: 'alert-circle-outline',
+  refunded: 'return-down-back-outline',
+};
 
 export default function OrdersScreen() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -114,16 +131,31 @@ export default function OrdersScreen() {
     <View style={s.container}>
       <View style={s.heading}>
         <View style={{ flex: 1 }}>
+          <Text style={s.eyebrow}>PEDIDOS</Text>
           <Text style={s.title}>Gestión de pedidos</Text>
           <Text style={s.subtitle}>Actualiza preparación, entrega y confirmación manual de pago.</Text>
         </View>
-        <TouchableOpacity style={s.refreshButton} onPress={loadOrders}><Text style={s.refreshText}>Actualizar</Text></TouchableOpacity>
+        <TouchableOpacity style={s.refreshButton} onPress={loadOrders} accessibilityRole="button">
+          <Ionicons name="refresh-outline" size={16} color={C.greenDark} />
+          <Text style={s.refreshText}>Actualizar</Text>
+        </TouchableOpacity>
       </View>
 
-      {loading ? <ActivityIndicator color="#2563eb" style={{ marginTop: 35 }} /> : (
+      {loading ? <ActivityIndicator color={C.green} style={{ marginTop: 35 }} /> : (
         <ScrollView contentContainerStyle={s.list}>
-          {orders.length === 0 ? <Text style={s.empty}>No hay pedidos.</Text> : orders.map((order) => (
-            <TouchableOpacity key={order.id} style={s.card} onPress={() => editOrder(order)}>
+          {orders.length === 0 ? (
+            <View style={s.emptyBox}>
+              <Ionicons name="receipt-outline" size={34} color={C.textLight} />
+              <Text style={s.empty}>No hay pedidos.</Text>
+            </View>
+          ) : orders.map((order) => (
+            <TouchableOpacity
+              key={order.id}
+              style={s.card}
+              onPress={() => editOrder(order)}
+              accessibilityRole="button"
+              accessibilityLabel={`Pedido ${order.id.slice(0, 8).toUpperCase()}`}
+            >
               <View style={{ flex: 1 }}>
                 <Text style={s.orderId}>Pedido {order.id.slice(0, 8).toUpperCase()}</Text>
                 <Text style={s.customer}>{order.customer_id ? customers[order.customer_id] || order.customer_id.slice(0, 8) : 'Sin cliente asignado'}</Text>
@@ -131,8 +163,14 @@ export default function OrdersScreen() {
               </View>
               <View style={s.right}>
                 <Text style={s.amount}>S/ {Number(order.total_amount).toFixed(2)}</Text>
-                <Text style={s.status}>{ORDER_STATUSES.find((item) => item.value === order.status)?.label}</Text>
-                <Text style={s.payment}>{PAYMENT_STATUSES.find((item) => item.value === order.payment_status)?.label} · {order.payment_method || 'sin método'}</Text>
+                <View style={s.statusRow}>
+                  <Ionicons name={ORDER_STATUS_ICONS[order.status] ?? 'cube-outline'} size={12} color={C.textMid} />
+                  <Text style={s.status}>{ORDER_STATUSES.find((item) => item.value === order.status)?.label}</Text>
+                </View>
+                <View style={s.statusRow}>
+                  <Ionicons name={PAYMENT_STATUS_ICONS[order.payment_status] ?? 'cube-outline'} size={12} color={C.textLight} />
+                  <Text style={s.payment}>{PAYMENT_STATUSES.find((item) => item.value === order.payment_status)?.label} · {order.payment_method || 'sin método'}</Text>
+                </View>
               </View>
             </TouchableOpacity>
           ))}
@@ -174,35 +212,46 @@ export default function OrdersScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f3f4f6', padding: 18 },
-  heading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 15 },
-  title: { color: '#111827', fontSize: 23, fontWeight: '900' },
-  subtitle: { color: '#6b7280', fontSize: 12, marginTop: 4 },
-  refreshButton: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#d1d5db', borderRadius: 9, paddingHorizontal: 12, paddingVertical: 9 },
-  refreshText: { color: '#374151', fontSize: 11, fontWeight: '800' },
+  container: { flex: 1, backgroundColor: C.bgPage, padding: 22 },
+  heading: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 18 },
+  eyebrow: { color: C.green, fontSize: 11, fontWeight: '700', letterSpacing: 1.6, marginBottom: 6 },
+  title: { color: C.text, fontSize: 23, fontWeight: '700', letterSpacing: -0.4 },
+  subtitle: { color: C.textMid, fontSize: 12, marginTop: 5 },
+  refreshButton: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    backgroundColor: C.white, borderWidth: 1, borderColor: C.border,
+    borderRadius: 8, paddingHorizontal: 13, paddingVertical: 10,
+  },
+  refreshText: { color: C.greenDark, fontSize: 12, fontWeight: '700' },
   list: { paddingBottom: 30 },
-  empty: { color: '#9ca3af', textAlign: 'center', marginTop: 35 },
-  card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 14, marginBottom: 9, gap: 12 },
-  orderId: { color: '#111827', fontSize: 13, fontWeight: '800' },
-  customer: { color: '#374151', fontSize: 12, marginTop: 4 },
-  meta: { color: '#6b7280', fontSize: 10, marginTop: 4 },
+  emptyBox: { alignItems: 'center', gap: 10, marginTop: 40 },
+  empty: { color: C.textMid, fontSize: 13 },
+  card: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: C.white,
+    borderWidth: 1, borderColor: C.border, borderRadius: 12,
+    padding: 16, marginBottom: 10, gap: 12,
+  },
+  orderId: { color: C.text, fontSize: 13, fontWeight: '700' },
+  customer: { color: C.textMid, fontSize: 12, marginTop: 4 },
+  meta: { color: C.textLight, fontSize: 11, marginTop: 4 },
   right: { alignItems: 'flex-end' },
-  amount: { color: '#1d4ed8', fontSize: 14, fontWeight: '900' },
-  status: { color: '#374151', fontSize: 10, fontWeight: '700', marginTop: 3 },
-  payment: { color: '#6b7280', fontSize: 9, marginTop: 3, textTransform: 'capitalize' },
-  backdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 18, backgroundColor: 'rgba(15,23,42,0.6)' },
-  editor: { width: '100%', maxWidth: 500, backgroundColor: '#fff', padding: 19, borderRadius: 15, maxHeight: '90%' },
-  editorTitle: { color: '#111827', fontSize: 19, fontWeight: '900' },
-  label: { color: '#4b5563', fontSize: 12, fontWeight: '800', marginTop: 14, marginBottom: 7 },
+  amount: { color: C.green, fontSize: 15, fontWeight: '700' },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
+  status: { color: C.textMid, fontSize: 11, fontWeight: '600' },
+  payment: { color: C.textLight, fontSize: 10, textTransform: 'capitalize' },
+  backdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 18, backgroundColor: 'rgba(14,43,41,0.55)' },
+  editor: { width: '100%', maxWidth: 520, backgroundColor: C.white, padding: 20, borderRadius: 12, borderWidth: 1, borderColor: C.border, maxHeight: '90%' },
+  editorTitle: { color: C.text, fontSize: 19, fontWeight: '700' },
+  label: { color: C.textMid, fontSize: 12, fontWeight: '700', marginTop: 16, marginBottom: 8, letterSpacing: 0.3 },
   options: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  option: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 16, backgroundColor: '#f3f4f6', borderWidth: 1, borderColor: '#e5e7eb' },
-  optionSelected: { backgroundColor: '#dbeafe', borderColor: '#60a5fa' },
-  optionText: { color: '#4b5563', fontSize: 10, fontWeight: '700' },
-  optionTextSelected: { color: '#1d4ed8' },
-  address: { color: '#4b5563', fontSize: 11, lineHeight: 17, backgroundColor: '#f9fafb', padding: 9, borderRadius: 8 },
-  actions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 18 },
-  cancelButton: { paddingHorizontal: 12, paddingVertical: 10 },
-  cancelText: { color: '#6b7280', fontSize: 12, fontWeight: '800' },
-  saveButton: { backgroundColor: '#1d4ed8', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 8 },
-  saveText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  option: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: C.bgSubtle, borderWidth: 1, borderColor: C.border },
+  optionSelected: { backgroundColor: C.greenLight, borderColor: C.green },
+  optionText: { color: C.textMid, fontSize: 11, fontWeight: '600' },
+  optionTextSelected: { color: C.greenDark, fontWeight: '700' },
+  address: { color: C.textMid, fontSize: 11, lineHeight: 17, backgroundColor: C.bgPage, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: C.border },
+  actions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 20 },
+  cancelButton: { paddingHorizontal: 14, paddingVertical: 11, borderRadius: 8, borderWidth: 1, borderColor: C.borderStrong },
+  cancelText: { color: C.textMid, fontSize: 12, fontWeight: '700' },
+  saveButton: { backgroundColor: C.green, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 8 },
+  saveText: { color: C.white, fontSize: 12, fontWeight: '700' },
 });

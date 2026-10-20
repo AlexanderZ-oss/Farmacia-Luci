@@ -5,16 +5,40 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "framacia",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
+    "primaryColor": "#16A34A",
+    "description": "Farmacia Luci — Medicamentos, vitaminas y cuidado personal con entrega a domicilio en Lima. Atención de químico farmacéutico.",
+    "splash": {
+      "backgroundColor": "#16A34A",
+      "resizeMode": "contain"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "CFBundleDisplayName": "Farmacia Luci"
+      }
     },
     "android": {
-      "package": "com.alexanderz.framacia"
+      "package": "com.alexanderz.framacia",
+      "adaptiveIcon": {
+        "backgroundColor": "#16A34A"
+      }
     },
     "web": {
       "bundler": "metro",
-      "output": "single"
+      "output": "single",
+      "name": "Farmacia Luci",
+      "shortName": "Farmacia Luci",
+      "description": "Medicamentos, vitaminas y cuidado personal con entrega a domicilio en Lima. Atención profesional de químico farmacéutico.",
+      "themeColor": "#16A34A",
+      "backgroundColor": "#FFFFFF",
+      "lang": "es",
+      "meta": {
+        "og:title": "Farmacia Luci — Tu salud, cerca de ti",
+        "og:description": "Medicamentos, vitaminas y cuidado personal con entrega a domicilio en Lima.",
+        "og:type": "website",
+        "twitter:card": "summary_large_image"
+      }
     },
     "plugins": [
       "expo-router",
@@ -24,7 +48,8 @@
           "photosPermission": "Permite seleccionar fotos para mostrarlas en los productos de la farmacia.",
           "cameraPermission": "Permite tomar fotos de los productos para el catálogo."
         }
-      ]
+      ],
+      "expo-font"
     ]
   }
 }

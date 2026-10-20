@@ -118,7 +118,7 @@ export default function CatalogScreen() {
                 e.stopPropagation?.();
                 addItem(item as Product, 1);
               }}
-              accessibilityRole="button"
+              accessibilityRole="none"
               accessibilityLabel={`Agregar ${item.name} al carrito`}
             >
               <Ionicons name="add" size={20} color={C.white} />

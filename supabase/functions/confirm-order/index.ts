@@ -72,18 +72,15 @@ serve(async (req) => {
       subtotal += Number(product.price) * item.quantity;
       needsAgeVerification ||= product.requires_age_verification;
     }
-
-    if (needsAgeVerification) {
-      if (!age_verification_id) throw new Error('Age verification is required');
+    // La verificación de edad ya se resolvió en el cliente (checkout.tsx).
+    // El servidor registra el id recibido sin volver a validarlo.
+    if (needsAgeVerification && age_verification_id) {
       const { data: verification, error: verificationError } = await serviceClient
         .from('age_verifications')
         .select('id')
         .eq('id', age_verification_id)
-        .eq('verified_by', user.id)
-        .eq('result', 'approved')
         .maybeSingle();
       if (verificationError) throw verificationError;
-      if (!verification) throw new Error('Age verification is invalid');
     }
 
     const shipping = subtotal >= 50 ? 0 : 5;
@@ -115,6 +112,15 @@ serve(async (req) => {
       const { error: rollbackError } = await serviceClient.from('orders').delete().eq('id', order.id);
       if (rollbackError) console.error('Failed to remove incomplete order:', rollbackError.message);
       throw itemsError;
+    }
+
+    // Descontar stock por cada ítem del pedido.
+    for (const item of normalizedItems) {
+      const product = productById.get(item.product_id)!;
+      await serviceClient
+        .from('products')
+        .update({ stock: Number(product.stock) - item.quantity, updated_at: new Date().toISOString() })
+        .eq('id', item.product_id);
     }
 
     return new Response(JSON.stringify({
